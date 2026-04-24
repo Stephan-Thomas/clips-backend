@@ -73,7 +73,7 @@ model Clip {
   postStatus    Json?
   postedAt      DateTime?
   metadataUri   String?
-  mintAddress   String?
+  mintAddress   String?   @unique
   mintedAt      DateTime?
   nftStatus     String    @default("none")
   createdAt     DateTime  @default(now())

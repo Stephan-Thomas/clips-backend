@@ -141,9 +141,9 @@ export class NftMintService {
     }
 
     // Prevent double minting
-    if (clip.nftStatus !== 'none' && clip.nftStatus !== 'failed') {
+    if (clip.nftStatus === 'minting' || clip.nftStatus === 'minted') {
       throw new BadRequestException(
-        `Clip is already minted or minting in progress (status: ${clip.nftStatus})`,
+        'Clip is already being minted or has been minted',
       );
     }
 
@@ -152,6 +152,12 @@ export class NftMintService {
         'Clip is not ready for minting (missing URL)',
       );
     }
+
+    // Set minting state before blockchain interaction
+    await this.prisma.clip.update({
+      where: { id: clipId },
+      data: { nftStatus: 'minting' },
+    });
 
     try {
       const metadataUri =
@@ -216,6 +222,12 @@ export class NftMintService {
         network: this.stellarService.network,
       };
     } catch (error) {
+      // Update status to failed on error
+      await this.prisma.clip.update({
+        where: { id: clipId },
+        data: { nftStatus: 'failed' },
+      });
+
       if (
         error instanceof BadRequestException ||
         error instanceof NotFoundException
@@ -336,6 +348,42 @@ export class NftMintService {
 
     return `ipfs://${cid}`;
   }
+
+  /**
+   * Confirm successful minting after on-chain transaction submission.
+   * Updates the Clip to 'minted' status with contract details.
+   */
+  async confirmMint(
+    clipId: number,
+    contractId: string,
+  ): Promise<{ success: boolean; clip?: { id: number; mintAddress: string | null; nftStatus: string } }> {
+    this.logger.log(`Confirming mint for clip ${clipId} with contract ${contractId}`);
+
+    try {
+      const clip = await this.prisma.clip.update({
+        where: { id: clipId },
+        data: {
+          nftStatus: 'minted',
+          mintAddress: contractId,
+          mintedAt: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        clip: {
+          id: clip.id,
+          mintAddress: clip.mintAddress,
+          nftStatus: clip.nftStatus,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Failed to confirm mint for clip ${clipId}: ${message}`);
+      throw new BadRequestException(`Failed to confirm mint: ${message}`);
+    }
+  }
+
   /**
    * Verified on-chain NFT ownership for a specific token and wallet.
    * Query Soroban contract 'owner_of' and compare with walletAddress.
