@@ -1,16 +1,43 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from './mail.service';
+import {
+  DeviceFingerprintService,
+  DeviceFingerprint,
+} from './device-fingerprint.service';
+import { BruteForceProtectionService } from './brute-force-protection.service';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { SignupDto } from './dto/signup.dto';
+import { LoginDto } from './dto/login.dto';
+import * as speakeasy from 'speakeasy';
+import * as QRCode from 'qrcode';
 
-type JwtUser = { id: number; email: string | null };
+type JwtUser = {
+  id: number;
+  email: string | null;
+  emailVerified?: Date | null;
+};
+
+const REFRESH_TOKEN_EXPIRES_DAYS =
+  Number(process.env.JWT_REFRESH_EXPIRES_DAYS) > 0
+    ? Number(process.env.JWT_REFRESH_EXPIRES_DAYS)
+    : 14;
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+    private readonly deviceFingerprintService: DeviceFingerprintService,
+    private readonly bruteForceService: BruteForceProtectionService,
   ) {}
 
   async findOrCreateGoogleUser(params: {
@@ -37,7 +64,11 @@ export class AuthService {
         if (!existingByEmail.provider || !existingByEmail.providerId) {
           return this.prisma.user.update({
             where: { id: existingByEmail.id },
-            data: { provider, providerId },
+            data: {
+              provider,
+              providerId,
+              emailVerified: existingByEmail.emailVerified || new Date(),
+            },
           });
         }
         return existingByEmail;
@@ -51,22 +82,130 @@ export class AuthService {
         providerId,
         name: name || undefined,
         picture: picture || undefined,
+        emailVerified: new Date(), // Auto verify oauth
       },
     });
   }
 
   issueTokens(user: JwtUser) {
-    const payload = { sub: user.id, email: user.email };
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      emailVerified: !!user.emailVerified,
+    };
     const accessToken = this.jwtService.sign(payload);
-    const refreshSeconds =
-      Number(process.env.JWT_REFRESH_EXPIRES) &&
-      Number(process.env.JWT_REFRESH_EXPIRES) > 0
-        ? Number(process.env.JWT_REFRESH_EXPIRES)
-        : 60 * 60 * 24 * 7;
-    const refreshToken = this.jwtService.sign(payload, {
-      expiresIn: refreshSeconds,
+    return { accessToken };
+  }
+
+  async issueTokensWithRefresh(
+    user: JwtUser,
+    deviceFingerprint?: DeviceFingerprint,
+  ) {
+    const { accessToken } = this.issueTokens(user);
+
+    // Generate opaque refresh token
+    const rawToken = crypto.randomBytes(40).toString('hex');
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+    const expiresAt = new Date(
+      Date.now() + REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000,
+    );
+
+    await this.prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+        userAgentHash: deviceFingerprint?.userAgentHash,
+        ipAddress: deviceFingerprint?.ipAddress,
+        acceptLanguage: deviceFingerprint?.acceptLanguage,
+      },
     });
-    return { accessToken, refreshToken };
+
+    return { accessToken, refreshToken: rawToken };
+  }
+
+  async refreshTokens(
+    rawToken: string,
+    currentDeviceFingerprint?: DeviceFingerprint,
+  ) {
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+
+    const stored = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!stored || stored.revokedAt) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (stored.expiresAt < new Date()) {
+      throw new UnauthorizedException('Refresh token expired');
+    }
+
+    // Validate device fingerprint if available
+    if (currentDeviceFingerprint && stored.userAgentHash) {
+      const storedFingerprint: DeviceFingerprint = {
+        userAgentHash: stored.userAgentHash,
+        ipAddress: stored.ipAddress || '',
+        acceptLanguage: stored.acceptLanguage || '',
+      };
+
+      if (
+        !this.deviceFingerprintService.compareFingerprints(
+          storedFingerprint,
+          currentDeviceFingerprint,
+        )
+      ) {
+        // Revoke all tokens for this user due to potential hijacking
+        await this.prisma.refreshToken.updateMany({
+          where: { userId: stored.userId, revokedAt: null },
+          data: { revokedAt: new Date() },
+        });
+        throw new UnauthorizedException(
+          'Device fingerprint mismatch - potential session hijacking detected',
+        );
+      }
+    }
+
+    // Rotate: revoke old token
+    await this.prisma.refreshToken.update({
+      where: { id: stored.id },
+      data: { revokedAt: new Date() },
+    });
+
+    const { user } = stored;
+    return this.issueTokensWithRefresh({
+      id: user.id,
+      email: user.email,
+      emailVerified: user.emailVerified,
+    });
+  }
+
+  async logout(rawToken: string) {
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+
+    const stored = await this.prisma.refreshToken.findUnique({
+      where: { tokenHash },
+    });
+
+    if (!stored) {
+      // Idempotent — already deleted or doesn't exist
+      return;
+    }
+
+    await this.prisma.refreshToken.delete({
+      where: { id: stored.id },
+    });
   }
 
   async signup(signupDto: SignupDto) {
@@ -93,10 +232,26 @@ export class AuthService {
       },
     });
 
+    // Generate Email Verification Token
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await this.prisma.emailVerificationToken.create({
+      data: { userId: user.id, tokenHash, expiresAt },
+    });
+
+    // Send the email
+    await this.mailService.sendVerificationEmail(email, rawToken);
+
     // Issue tokens
-    const tokens = this.issueTokens({
+    const tokens = await this.issueTokensWithRefresh({
       id: user.id,
       email: user.email,
+      emailVerified: null,
     });
 
     return {
@@ -105,8 +260,300 @@ export class AuthService {
         email: user.email,
         name: user.name,
         picture: user.picture,
+        emailVerified: false,
       },
       tokens,
     };
+  }
+
+  async verifyEmail(rawToken: string) {
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+
+    const verificationToken =
+      await this.prisma.emailVerificationToken.findUnique({
+        where: { tokenHash },
+      });
+
+    if (!verificationToken) {
+      throw new NotFoundException('Invalid or expired verification link');
+    }
+
+    if (verificationToken.usedAt) {
+      throw new UnauthorizedException(
+        'Verification link has already been used',
+      );
+    }
+
+    if (verificationToken.expiresAt < new Date()) {
+      throw new UnauthorizedException('Verification link has expired');
+    }
+
+    // Mark as used and update user
+    await this.prisma.$transaction([
+      this.prisma.emailVerificationToken.update({
+        where: { id: verificationToken.id },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.user.update({
+        where: { id: verificationToken.userId },
+        data: { emailVerified: new Date() },
+      }),
+    ]);
+
+    return { message: 'Email successfully verified' };
+  }
+
+  async login(dto: LoginDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    if (!user?.password) {
+      // Record failed attempt for non-existent user to prevent enumeration
+      await this.bruteForceService.recordFailedAttempt(dto.email);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const matches = await bcrypt.compare(dto.password, user.password);
+    if (!matches) {
+      const result = await this.bruteForceService.recordFailedAttempt(
+        dto.email,
+      );
+
+      if (result.isLocked) {
+        throw new UnauthorizedException(
+          `Account locked. Try again in ${result.lockoutTimeLeft} seconds.`,
+        );
+      }
+
+      throw new UnauthorizedException(
+        `Invalid credentials. ${result.remainingAttempts} attempts remaining.`,
+      );
+    }
+
+    // Clear failed attempts on successful login
+    await this.bruteForceService.clearFailedAttempts(dto.email);
+
+    if (user.mfaEnabled) {
+      if (!dto.totpCode || !user.mfaSecret) {
+        throw new UnauthorizedException('TOTP code is required');
+      }
+
+      const isTotpValid = speakeasy.totp.verify({
+        secret: user.mfaSecret,
+        encoding: 'base32',
+        token: dto.totpCode,
+        window: 1,
+      });
+
+      if (!isTotpValid) {
+        throw new UnauthorizedException('Invalid TOTP code');
+      }
+    }
+
+    const tokens = await this.issueTokensWithRefresh({
+      id: user.id,
+      email: user.email,
+      emailVerified: user.emailVerified,
+    });
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+        mfaEnabled: user.mfaEnabled,
+        emailVerified: !!user.emailVerified,
+      },
+      tokens,
+    };
+  }
+
+  async requestMagicLink(email: string): Promise<void> {
+    // Find or create user — magic link works even for new users
+    let user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      user = await this.prisma.user.create({ data: { email } });
+    }
+
+    // Generate a cryptographically random token
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    await this.prisma.magicLink.create({
+      data: { userId: user.id, tokenHash, expiresAt },
+    });
+
+    await this.mailService.sendMagicLink(email, rawToken);
+  }
+
+  async verifyMagicLink(
+    rawToken: string,
+    deviceFingerprint?: DeviceFingerprint,
+  ) {
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+
+    const magicLink = await this.prisma.magicLink.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!magicLink) {
+      throw new NotFoundException('Invalid or expired magic link');
+    }
+
+    if (magicLink.usedAt) {
+      throw new UnauthorizedException('Magic link has already been used');
+    }
+
+    if (magicLink.expiresAt < new Date()) {
+      throw new UnauthorizedException('Magic link has expired');
+    }
+
+    // Mark as used
+    await this.prisma.magicLink.update({
+      where: { id: magicLink.id },
+      data: { usedAt: new Date() },
+    });
+
+    const { user } = magicLink;
+    const tokens = await this.issueTokensWithRefresh({
+      id: user.id,
+      email: user.email,
+      emailVerified: user.emailVerified,
+    });
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        picture: user.picture,
+        emailVerified: !!user.emailVerified,
+      },
+      tokens,
+    };
+  }
+
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) return;
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    await this.prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash, expiresAt },
+    });
+
+    await this.mailService.sendPasswordResetLink(email, rawToken);
+  }
+
+  async resetPassword(rawToken: string, newPassword: string): Promise<void> {
+    const tokenHash = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
+    const resetToken = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!resetToken) {
+      throw new UnauthorizedException('Invalid reset token');
+    }
+
+    if (resetToken.usedAt) {
+      throw new UnauthorizedException('Reset token already used');
+    }
+
+    if (resetToken.expiresAt < new Date()) {
+      throw new UnauthorizedException('Reset token expired');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: resetToken.userId },
+        data: { password: hashedPassword },
+      }),
+      this.prisma.passwordResetToken.update({
+        where: { id: resetToken.id },
+        data: { usedAt: new Date() },
+      }),
+      this.prisma.refreshToken.deleteMany({
+        where: { userId: resetToken.userId },
+      }),
+    ]);
+  }
+
+  async setupMfa(userId: number) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const secret = speakeasy.generateSecret({
+      name: `ClipCash (${user.email})`,
+    });
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfaSecret: secret.base32, mfaEnabled: false },
+    });
+
+    const qrCodeDataUrl = secret.otpauth_url
+      ? await QRCode.toDataURL(secret.otpauth_url)
+      : null;
+
+    return {
+      secret: secret.base32,
+      otpauthUrl: secret.otpauth_url,
+      qrCodeDataUrl,
+    };
+  }
+
+  async enableMfa(userId: number, code: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.mfaSecret) {
+      throw new BadRequestException('MFA setup is required before enabling');
+    }
+
+    const valid = speakeasy.totp.verify({
+      secret: user.mfaSecret,
+      encoding: 'base32',
+      token: code,
+      window: 1,
+    });
+
+    if (!valid) {
+      throw new UnauthorizedException('Invalid TOTP code');
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfaEnabled: true },
+    });
+  }
+
+  async disableMfa(userId: number): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { mfaEnabled: false, mfaSecret: null },
+    });
   }
 }

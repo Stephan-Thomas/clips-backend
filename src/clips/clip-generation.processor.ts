@@ -1,16 +1,19 @@
 import { Logger } from '@nestjs/common';
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
-import { Job } from 'bullmq';
+import { Job, UnrecoverableError } from 'bullmq';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Clip } from './clip.entity';
+import type { Clip } from './clip.entity';
 import { calculateViralityScore } from './virality-score.util';
-import { cutClip } from './ffmpeg.util';
+import { cutClip, getVideoMetadata } from './ffmpeg.util';
+import { generateCaption } from './caption.util';
 import { CloudinaryService } from './cloudinary.service';
 import { CLIP_GENERATION_QUEUE } from './clip-generation.queue';
 import {
   CLIP_GENERATION_FAILED_EVENT,
   ClipGenerationFailedPayload,
 } from './clips.events';
+import { ClipsGateway } from './clips.gateway';
+import { ClipsService } from './clips.service';
 
 export interface ClipGenerationJob {
   videoId: string;
@@ -27,6 +30,12 @@ export interface ClipGenerationJob {
   /** 0.0–1.0: where in the source video this clip starts */
   positionRatio: number;
   transcript?: string;
+  /** Video title — used to auto-generate the caption placeholder */
+  title?: string;
+  /** Existing Clip ID in Prisma — used to update URLs after successful generation */
+  clipId?: number;
+  /** Existing virality score to preserve during regeneration */
+  existingViralityScore?: number;
 }
 
 export interface ClipProcessingResult {
@@ -60,6 +69,8 @@ export class ClipGenerationProcessor extends WorkerHost {
   constructor(
     private readonly cloudinaryService: CloudinaryService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly clipsGateway: ClipsGateway,
+    private readonly clipsService: ClipsService,
   ) {
     super();
   }
@@ -69,6 +80,14 @@ export class ClipGenerationProcessor extends WorkerHost {
     const data = job.data;
     const durationSeconds = data.endTime - data.startTime;
     const clipId = `${data.videoId}-${data.startTime}-${data.endTime}`;
+    const JOB_TIMEOUT_MS = 30 * 60 * 1000;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), JOB_TIMEOUT_MS);
+    this.clipsService._registerJobController(
+      data.videoId,
+      String(job.id ?? ''),
+      controller,
+    );
 
     this.logger.log(
       `Processing clip job ${job.id} — attempt ${job.attemptsMade + 1}/${job.opts.attempts ?? 1} ` +
@@ -78,19 +97,27 @@ export class ClipGenerationProcessor extends WorkerHost {
     try {
       // FFmpeg cut — may throw transiently (OOM, network mount, etc.)
       this.logger.log(`Starting clip generation: ${clipId}`);
+      await job.updateProgress(10);
       await cutClip({
         inputPath: data.inputPath,
         outputPath: data.outputPath,
         startTime: data.startTime,
         endTime: data.endTime,
         videoDuration: data.videoDuration,
+        signal: controller.signal,
       });
+      await job.updateProgress(50);
 
-      const viralityScore = calculateViralityScore({
-        durationSeconds,
-        positionRatio: data.positionRatio,
-        transcript: data.transcript,
-      });
+      const metadata = await getVideoMetadata(data.outputPath);
+      const actualDuration = Math.round(metadata.duration);
+
+      const viralityScore =
+        data.existingViralityScore ??
+        calculateViralityScore({
+          durationSeconds: actualDuration,
+          positionRatio: data.positionRatio,
+          transcript: data.transcript,
+        });
 
       this.logger.log(
         `Clip cut successfully — videoId=${data.videoId} ` +
@@ -99,14 +126,49 @@ export class ClipGenerationProcessor extends WorkerHost {
           `viralityScore=${viralityScore}`,
       );
 
-      // Upload to Cloudinary
-      const uploadResult = await this.uploadToCloudinary(
-        data.outputPath,
-        clipId,
-      );
+      // Upload to Cloudinary with 2 retries
+      await job.updateProgress(80);
+      const abortPromise = new Promise<never>((_, reject) => {
+        controller.signal.addEventListener(
+          'abort',
+          () => reject(new Error('Aborted')),
+          { once: true },
+        );
+      });
+      const uploadResult = await Promise.race([
+        this.uploadToCloudinary(data.outputPath, clipId),
+        abortPromise,
+      ]);
 
       if (uploadResult.error) {
-        throw new Error(`Cloudinary upload failed: ${uploadResult.error}`);
+        // Upload failed after all retries - keep local file as fallback
+        this.logger.error(
+          `Cloudinary upload failed after retries for ${clipId}: ${uploadResult.error}. ` +
+            `Keeping local file as fallback: ${data.outputPath}`,
+        );
+
+        // Return clip with upload_failed status and local file path
+        return {
+          id: clipId,
+          videoId: data.videoId,
+          userId: '', // populated by ClipsService after dequeue
+          startTime: data.startTime,
+          endTime: data.endTime,
+          duration: actualDuration,
+          positionRatio: data.positionRatio,
+          transcript: data.transcript,
+          viralityScore,
+          clipUrl: '', // No Cloudinary URL available
+          thumbnail: undefined,
+          status: 'upload_failed',
+          localFilePath: data.outputPath, // Keep local file as fallback
+          error: `Cloudinary upload failed: ${uploadResult.error}`,
+          selected: false,
+          postStatus: null,
+          caption: generateCaption(data.title, clipId, data.transcript),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
       }
 
       // Delete local temporary file after successful upload
@@ -115,6 +177,7 @@ export class ClipGenerationProcessor extends WorkerHost {
       this.logger.log(
         `Clip processing complete: ${clipId} → ${uploadResult.secure_url}`,
       );
+      await job.updateProgress(100);
 
       return {
         id: clipId,
@@ -122,6 +185,7 @@ export class ClipGenerationProcessor extends WorkerHost {
         userId: '', // populated by ClipsService after dequeue
         startTime: data.startTime,
         endTime: data.endTime,
+        duration: actualDuration,
         positionRatio: data.positionRatio,
         transcript: data.transcript,
         viralityScore,
@@ -130,31 +194,51 @@ export class ClipGenerationProcessor extends WorkerHost {
         status: 'success',
         selected: false,
         postStatus: null,
+        caption: generateCaption(data.title, clipId, data.transcript),
         createdAt: new Date(),
         updatedAt: new Date(),
       };
     } catch (error) {
       this.logger.error(
-        `Clip generation failed for ${clipId}: ${(error as any).message}`,
-        (error as any).stack,
+        `Clip generation failed for ${clipId}: ${error.message}`,
+        error.stack,
       );
 
-      // Attempt cleanup of local file
-      try {
-        await this.cloudinaryService.deleteLocalFile(data.outputPath);
-      } catch (cleanupError) {
-        this.logger.warn(
-          `Cleanup failed for ${data.outputPath}: ${(cleanupError as any).message}`,
-        );
+      // Only attempt cleanup if the error occurred before/during FFmpeg cut
+      // If upload failed, the file is already preserved in the success path
+      const errorMessage = error.message || '';
+      const isUploadError =
+        errorMessage.includes('Cloudinary') || errorMessage.includes('upload');
+
+      if (!isUploadError) {
+        // Attempt cleanup of local file for non-upload errors
+        try {
+          await this.cloudinaryService.deleteLocalFile(data.outputPath);
+        } catch (cleanupError) {
+          this.logger.warn(
+            `Cleanup failed for ${data.outputPath}: ${cleanupError.message}`,
+          );
+        }
       }
 
-      // Re-throw to trigger BullMQ retry logic
+      if (controller.signal.aborted) {
+        const cancelled = this.clipsService._isVideoCancelled(data.videoId);
+        clearTimeout(timeout);
+        this.clipsService._clearJobController(String(job.id ?? ''));
+        if (cancelled) {
+          throw new UnrecoverableError('Cancelled by user');
+        } else {
+          throw new UnrecoverableError('Timeout');
+        }
+      }
+      clearTimeout(timeout);
+      this.clipsService._clearJobController(String(job.id ?? ''));
       throw error;
     }
   }
 
   /**
-   * Upload clip to Cloudinary
+   * Upload clip to Cloudinary with 2 retries
    * @param filePath - Path to clip file
    * @param clipId - Unique clip identifier
    */
@@ -164,21 +248,24 @@ export class ClipGenerationProcessor extends WorkerHost {
   ): Promise<any> {
     try {
       const buffer = await this.cloudinaryService.readFileToBuffer(filePath);
+      // Upload with 2 retries (3 total attempts)
       const result = await this.cloudinaryService.uploadVideoFromBuffer(
         buffer,
         clipId,
+        {}, // default options
+        2, // 2 retries
       );
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
 
       return result;
     } catch (error) {
       this.logger.error(
-        `Upload to Cloudinary failed for ${clipId}: ${(error as any).message}`,
+        `Upload to Cloudinary failed for ${clipId}: ${error.message}`,
       );
-      throw error;
+      return {
+        error: error.message,
+        secure_url: '',
+        public_id: clipId,
+      };
     }
   }
 
@@ -218,5 +305,62 @@ export class ClipGenerationProcessor extends WorkerHost {
     };
 
     this.eventEmitter.emit(CLIP_GENERATION_FAILED_EVENT, payload);
+  }
+
+  /**
+   * Called by BullMQ after a job completes successfully.
+   *
+   * Responsibilities:
+   *  1. Update the Clip record in Prisma with new URLs and status='success'
+   *  2. Clean up local files (already handled in process() but good to be sure)
+   */
+  @OnWorkerEvent('completed')
+  async onCompleted(job: Job<ClipGenerationJob>, result: Clip): Promise<void> {
+    const { clipId } = job.data;
+    if (!clipId) {
+      this.logger.debug(
+        `Job ${job.id} completed but no clipId provided for database update`,
+      );
+      return;
+    }
+
+    this.logger.log(
+      `Job ${job.id} completed. Updating clip ${clipId} in database.`,
+    );
+
+    try {
+      await this.clipsService.updateClip(clipId, {
+        clipUrl: result.clipUrl,
+        thumbnail: result.thumbnail,
+        status: result.status,
+        duration: result.duration,
+        error: result.error,
+        localFilePath: result.localFilePath,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to update clip ${clipId} after successful generation: ${error.message}`,
+      );
+    }
+  }
+
+  @OnWorkerEvent('progress')
+  onProgress(job: Job<ClipGenerationJob>, progress: number): void {
+    const video = this.clipsService._getVideo(job.data.videoId);
+    const userId = video?.userId;
+    if (!userId) return;
+    const clipId = `${job.data.videoId}-${job.data.startTime}-${job.data.endTime}`;
+    const payload = {
+      jobId: job.id,
+      videoId: job.data.videoId,
+      percent: Math.max(0, Math.min(100, Math.round(Number(progress) || 0))),
+      currentClip: {
+        id: clipId,
+        startTime: job.data.startTime,
+        endTime: job.data.endTime,
+        positionRatio: job.data.positionRatio,
+      },
+    };
+    this.clipsGateway.emitProgressToUser(userId, payload);
   }
 }

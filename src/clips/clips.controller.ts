@@ -7,13 +7,17 @@ import {
   Query,
   NotFoundException,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { ClipsService } from './clips.service';
-import type { ClipSortField, SortOrder } from './clips.service';
-import type { ClipGenerationJob } from './clip-generation.processor';
-import type { BulkUpdateClipsDto } from './dto/bulk-update-clips.dto';
+import { ClipsService } from './clips.service.js';
+import type { ClipSortField, SortOrder } from './clips.service.js';
+import type { ClipGenerationJob } from './clip-generation.processor.js';
+import type { BulkUpdateClipsDto } from './dto/bulk-update-clips.dto.js';
+import { LoginGuard } from '../auth/guards/login.guard.js';
+import { BulkDeleteClipsDto } from './dto/bulk-delete-clips.dto.js';
 
+@UseGuards(LoginGuard)
 @Controller('clips')
 export class ClipsController {
   constructor(private readonly clipsService: ClipsService) {}
@@ -36,27 +40,41 @@ export class ClipsController {
    *
    * Query params:
    *   videoId  — filter to a specific source video
-   *   sortBy   — viralityScore | createdAt | duration  (default: viralityScore)
-   *   order    — asc | desc  (default: desc)
+   *   sort     — field:order (e.g., viralityScore:desc, createdAt:asc)
+   *   sortBy   — legacy support for viralityScore | createdAt | duration
+   *   order    — legacy support for asc | desc
    *
    * Examples:
-   *   GET /clips
-   *   GET /clips?sortBy=viralityScore&order=desc
-   *   GET /clips?videoId=abc123&sortBy=duration&order=asc
+   *   GET /clips?sort=viralityScore:desc
+   *   GET /clips?videoId=abc123&sort=duration:asc
    */
   @Get()
   list(
     @Query('videoId') videoId?: string,
+    @Query('sort') sort?: string,
     @Query('sortBy') sortBy?: ClipSortField,
     @Query('order') order?: SortOrder,
   ) {
-    return this.clipsService.listClips({ videoId, sortBy, order });
+    let finalSortBy = sortBy;
+    let finalOrder = order;
+
+    if (sort) {
+      const [field, dir] = sort.split(':');
+      if (field) finalSortBy = field as ClipSortField;
+      if (dir) finalOrder = dir as SortOrder;
+    }
+
+    return this.clipsService.listClips({
+      videoId,
+      sortBy: finalSortBy,
+      order: finalOrder,
+    });
   }
 
   /** GET /clips/:id */
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    const clip = this.clipsService.findById(id);
+  async findOne(@Param('id') id: string) {
+    const clip = await this.clipsService.findById(id);
     if (!clip) throw new NotFoundException(`Clip ${id} not found`);
     return clip;
   }
@@ -85,8 +103,29 @@ export class ClipsController {
    */
   @Post('bulk-update')
   bulkUpdate(@Body() dto: BulkUpdateClipsDto, @Req() req: Request) {
-    const userId: string =
-      (req as any).user?.id ?? (req.headers['x-user-id'] as string) ?? 'anonymous';
+    const userId: number = Number(
+      (req as any).user?.id ?? (req.headers['x-user-id'] as string) ?? 0,
+    );
     return this.clipsService.bulkUpdate(userId, dto);
+  }
+
+  @Post('bulk-delete')
+  bulkDelete(@Body() dto: BulkDeleteClipsDto, @Req() req: Request) {
+    const userId: number = Number(
+      (req as any).user?.id ?? (req.headers['x-user-id'] as string) ?? 0,
+    );
+    return this.clipsService.bulkDeleteRejected(userId, dto.clipIds);
+  }
+
+  /**
+   * POST /clips/:id/regenerate
+   * Re-run FFmpeg cut for a single clip using original timestamps.
+   */
+  @Post(':id/regenerate')
+  regenerate(@Param('id') id: string, @Req() req: Request) {
+    const userId: number = Number(
+      (req as any).user?.id ?? (req.headers['x-user-id'] as string) ?? 0,
+    );
+    return this.clipsService.regenerate(userId, Number(id));
   }
 }

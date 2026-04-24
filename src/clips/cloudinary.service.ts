@@ -24,9 +24,11 @@ export class CloudinaryService {
   }
 
   /**
-   * Upload video clip from buffer to Cloudinary
+   * Upload video clip from buffer to Cloudinary with retry logic
    * @param buffer - Video buffer from FFmpeg
    * @param publicId - Cloudinary public ID for the clip
+   * @param options - Upload options
+   * @param retries - Number of retry attempts (default: 2)
    * @returns Upload result with secure_url and thumbnail_url
    */
   async uploadVideoFromBuffer(
@@ -37,6 +39,77 @@ export class CloudinaryService {
       resourceType?: 'video' | 'image' | 'raw' | 'auto';
       autoTagging?: number;
     } = {},
+    retries: number = 2,
+  ): Promise<CloudinaryUploadResult> {
+    const maxAttempts = retries + 1;
+    let lastError: string = '';
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        this.logger.log(
+          `Cloudinary upload attempt ${attempt}/${maxAttempts} for ${publicId}`,
+        );
+
+        const result = await this.performUpload(buffer, publicId, options);
+
+        if (result.error) {
+          lastError = result.error;
+          this.logger.warn(
+            `Cloudinary upload attempt ${attempt}/${maxAttempts} failed for ${publicId}: ${result.error}`,
+          );
+
+          if (attempt < maxAttempts) {
+            // Wait before retry with exponential backoff
+            const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+            this.logger.log(`Retrying in ${delayMs}ms...`);
+            await this.delay(delayMs);
+            continue;
+          }
+        } else {
+          // Success
+          this.logger.log(
+            `Clip uploaded successfully on attempt ${attempt}: ${publicId} (${result.secure_url})`,
+          );
+          return result;
+        }
+      } catch (error) {
+        lastError = error.message;
+        this.logger.error(
+          `Cloudinary upload attempt ${attempt}/${maxAttempts} threw error for ${publicId}: ${lastError}`,
+        );
+
+        if (attempt < maxAttempts) {
+          const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+          this.logger.log(`Retrying in ${delayMs}ms...`);
+          await this.delay(delayMs);
+          continue;
+        }
+      }
+    }
+
+    // All attempts failed
+    this.logger.error(
+      `All ${maxAttempts} Cloudinary upload attempts failed for ${publicId}. Last error: ${lastError}`,
+    );
+    return {
+      secure_url: '',
+      public_id: publicId,
+      error: lastError || 'Upload failed after all retry attempts',
+    };
+  }
+
+  /**
+   * Perform a single upload attempt to Cloudinary
+   * @private
+   */
+  private async performUpload(
+    buffer: Buffer,
+    publicId: string,
+    options: {
+      folder?: string;
+      resourceType?: 'video' | 'image' | 'raw' | 'auto';
+      autoTagging?: number;
+    },
   ): Promise<CloudinaryUploadResult> {
     return new Promise((resolve) => {
       const {
@@ -60,18 +133,12 @@ export class CloudinaryService {
         },
         (error: any, result: any) => {
           if (error) {
-            this.logger.error(
-              `Cloudinary upload failed for ${publicId}: ${error.message}`,
-            );
             resolve({
               secure_url: '',
               public_id: publicId,
               error: error.message,
             });
           } else if (result) {
-            this.logger.log(
-              `Clip uploaded successfully: ${publicId} (${result.secure_url})`,
-            );
             resolve({
               secure_url: result.secure_url,
               public_id: result.public_id,
@@ -92,6 +159,14 @@ export class CloudinaryService {
 
       streamifier.createReadStream(buffer).pipe(uploadStream);
     });
+  }
+
+  /**
+   * Delay helper for retry backoff
+   * @private
+   */
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -124,7 +199,7 @@ export class CloudinaryService {
       await cloudinary.uploader.destroy(publicId, { resource_type: 'video' });
       this.logger.log(`Clip deleted from Cloudinary: ${publicId}`);
     } catch (error) {
-      this.logger.error(`Failed to delete clip ${publicId}: ${(error as any).message}`);
+      this.logger.error(`Failed to delete clip ${publicId}: ${error.message}`);
     }
   }
 
@@ -140,7 +215,7 @@ export class CloudinaryService {
       }
     } catch (error) {
       this.logger.error(
-        `Failed to delete local file ${filePath}: ${(error as any).message}`,
+        `Failed to delete local file ${filePath}: ${error.message}`,
       );
     }
   }

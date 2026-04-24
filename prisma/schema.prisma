@@ -4,24 +4,31 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
   id            Int            @id @default(autoincrement())
   email         String         @unique
   password      String?
+  mfaEnabled    Boolean        @default(false)
+  mfaSecret     String?
   provider      String?
   providerId    String?
   name          String?
   picture       String?
+  emailVerified DateTime?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   videos        Video[]
   userPlatforms UserPlatform[]
   subscriptions Subscription[]
+  stellarPaymentIntents StellarPaymentIntent[]
   wallets       Wallet[]
   payouts       Payout[]
+  magicLinks     MagicLink[]
+  refreshTokens  RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
 
   @@unique([provider, providerId])
 }
@@ -38,6 +45,7 @@ model Video {
   fileSize         BigInt?
   status           String   @default("pending")
   processingError  String?
+  // Schema: { momentsFound: number, inputQuality: string, durationSec: number, clipsGenerated: number, timeTakenMs: number, errorDetails?: string }
   processingStats  Json?
   targetPlatforms  Json?
   createdAt        DateTime @default(now())
@@ -56,12 +64,18 @@ model Clip {
   thumbnail     String?
   platform      String?
   title         String?
+  caption       String?
   startTime     Float
   endTime       Float
   duration      Int
   viralityScore Float?
+  royaltyBps    Int?
   postStatus    Json?
   postedAt      DateTime?
+  metadataUri   String?
+  mintAddress   String?
+  mintedAt      DateTime?
+  nftStatus     String    @default("none")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   video         Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
@@ -97,13 +111,12 @@ model Wallet {
   id          Int       @id @default(autoincrement())
   userId      Int
   address     String
-  chain       String    @default("solana")
+  chain       String   @default("stellar")
   type        String
-  connectedAt DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  /// Soft-delete timestamp — non-null means the wallet has been disconnected
+  connectedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   deletedAt   DateTime?
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   payouts     Payout[]
 
   @@index([userId])
@@ -118,6 +131,8 @@ model Payout {
   method        String
   status        String
   transactionId String?
+  onChainTxHash String?
+  confirmedAt   DateTime?
   paidAt        DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -126,13 +141,85 @@ model Payout {
 }
 
 model Subscription {
-  id        Int       @id @default(autoincrement())
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  plan          String
+  status        String
+  paymentMethod String   @default("stripe")
+  startDate     DateTime
+  endDate       DateTime?
+  stellarTxHash   String?
+  stellarMemo     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StellarPaymentIntent {
+  id            String   @id @default(cuid())
+  userId        Int
+  amount         Float
+  asset         String
+  destination   String
+  memo          String
+  status        String   @default("pending")
+  expiresAt      DateTime
+  transactionId String?
+  plan          String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MagicLink {
+  id        Int      @id @default(autoincrement())
   userId    Int
-  plan      String
-  status    String
-  startDate DateTime
-  endDate   DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+}
+
+model RefreshToken {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  tokenHash     String   @unique
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  userAgentHash String?
+  ipAddress     String?
+  acceptLanguage String?
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+}
+
+model EmailVerificationToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
 }

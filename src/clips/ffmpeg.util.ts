@@ -12,6 +12,51 @@ export interface CutClipOptions {
   endTime: number;
   /** Total duration of the source video in seconds (used for edge-case clamping) */
   videoDuration?: number;
+  signal?: AbortSignal;
+}
+
+export interface VideoMetadata {
+  duration: number;
+  width: number;
+  height: number;
+  format: string;
+  resolution: string;
+}
+
+/**
+ * Extracts video metadata using ffprobe.
+ * Returns duration, width, height, format, and resolution.
+ */
+export async function getVideoMetadata(
+  inputPath: string,
+): Promise<VideoMetadata> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(inputPath, (err, metadata) => {
+      if (err) {
+        return reject(err);
+      }
+
+      const format = metadata.format;
+      const stream = metadata.streams.find((s) => s.codec_type === 'video');
+
+      if (!stream) {
+        return reject(new Error('No video stream found'));
+      }
+
+      const duration = parseFloat(format.duration?.toString() || '0');
+      const width = stream.width || 0;
+      const height = stream.height || 0;
+      const formatName = format.format_name || 'unknown';
+
+      resolve({
+        duration,
+        width,
+        height,
+        format: formatName,
+        resolution: `${width}x${height}`,
+      });
+    });
+  });
 }
 
 /**
@@ -36,9 +81,10 @@ export function cutClip(options: CutClipOptions): Promise<string> {
 
   // --- Sanitise & clamp ---
   const start = Math.max(0, options.startTime);
-  const end = videoDuration != null
-    ? Math.min(options.endTime, videoDuration)
-    : options.endTime;
+  const end =
+    videoDuration != null
+      ? Math.min(options.endTime, videoDuration)
+      : options.endTime;
 
   if (end <= start) {
     throw new RangeError(
@@ -55,12 +101,46 @@ export function cutClip(options: CutClipOptions): Promise<string> {
   );
 
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
-      .seekInput(startSeconds)   // -ss <start>  (input-side seek for accuracy)
-      .duration(durationSeconds) // -t  <duration>
+    const stderrLines: string[] = [];
+    const MAX_STDERR_LINES = 10;
+
+    const cmd = ffmpeg(inputPath)
+      .seekInput(startSeconds)
+      .duration(durationSeconds)
       .output(outputPath)
-      .on('end', () => resolve(outputPath))
-      .on('error', (err: Error) => reject(err))
-      .run();
+      .on('stderr', (line: string) => {
+        stderrLines.push(line);
+        if (stderrLines.length > MAX_STDERR_LINES) {
+          stderrLines.shift();
+        }
+        logger.debug(`[ffmpeg stderr] ${line}`);
+      })
+      .on('end', () => {
+        resolve(outputPath);
+      })
+      .on('error', (err: Error) => {
+        const stderrSummary =
+          stderrLines.length > 0
+            ? `\nLast FFmpeg output:\n${stderrLines.join('\n')}`
+            : '';
+        const detailedError = new Error(`${err.message}${stderrSummary}`);
+        reject(detailedError);
+      });
+
+    if (options.signal) {
+      const onAbort = () => {
+        try {
+          cmd.kill('SIGKILL');
+        } catch {}
+        reject(new Error('Aborted'));
+      };
+      if (options.signal.aborted) {
+        onAbort();
+        return;
+      }
+      options.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    cmd.run();
   });
 }
