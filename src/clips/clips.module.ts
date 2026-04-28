@@ -9,12 +9,16 @@ import { ClipsGateway } from './clips.gateway';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NftMintService } from './nft-mint.service';
 import { StellarModule } from '../stellar/stellar.module';
+import { AyrshareService } from './ayrshare.service';
+import { ClipPublishService } from './clip-publish.service';
+import { UserPlatformModule } from '../user-platform/user-platform.module';
 
 @Module({
   imports: [
     BullModule.registerQueue({ name: CLIP_GENERATION_QUEUE }),
     PrismaModule,
     StellarModule,
+    UserPlatformModule,
   ],
   controllers: [ClipsController],
   providers: [
@@ -23,7 +27,9 @@ import { StellarModule } from '../stellar/stellar.module';
     CloudinaryService,
     ClipsGateway,
     NftMintService,
+    AyrshareService,
+    ClipPublishService,
   ],
-  exports: [ClipsService, CloudinaryService, ClipsGateway, NftMintService],
+  exports: [ClipsService, CloudinaryService, ClipsGateway, NftMintService, ClipPublishService],
 })
 export class ClipsModule {}

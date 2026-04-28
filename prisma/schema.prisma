@@ -58,7 +58,7 @@ model Video {
 }
 
 model Clip {
-  id            Int       @id @default(autoincrement())
+  id            Int        @id @default(autoincrement())
   videoId       Int
   clipUrl       String
   thumbnail     String?
@@ -73,15 +73,32 @@ model Clip {
   postStatus    Json?
   postedAt      DateTime?
   metadataUri   String?
-  mintAddress   String?   @unique
+  mintAddress   String?    @unique
   mintedAt      DateTime?
-  nftStatus     String    @default("none")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  video         Video     @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  nftStatus     String     @default("none")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  video         Video      @relation(fields: [videoId], references: [id], onDelete: Cascade)
   earnings      Earning[]
+  clipPosts     ClipPost[]
 
   @@index([videoId])
+}
+
+model ClipPost {
+  id         Int      @id @default(autoincrement())
+  clipId     Int
+  platform   String
+  status     String   @default("pending")
+  postId     String?
+  attempts   Int      @default(0)
+  error      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  clip       Clip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+
+  @@index([clipId])
+  @@index([platform])
 }
 
 model Earning {
