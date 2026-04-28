@@ -13,11 +13,30 @@ const TOTAL_PLATFORM_FEES: &str = "total_platform_fees";
 /// Platform fee percentage in basis points (e.g., 500 = 5%)
 const PLATFORM_FEE_BPS: u32 = 500; // 5% platform fee
 
+/// Royalty information for a single token
+/// Contains the recipient address and royalty percentage in basis points
 #[contracttype]
 #[derive(Clone)]
 pub struct RoyaltyInfo {
+    /// The address that receives royalty payments
     pub recipient: Address,
-    pub bps: u32, // basis points (e.g., 1000 = 10%)
+    /// Royalty percentage in basis points (e.g., 1000 = 10%, max 1500 = 15%)
+    pub bps: u32,
+}
+
+/// Batch royalty information including token ID
+/// Used by batch_royalty_info to return royalty data for multiple tokens
+#[contracttype]
+#[derive(Clone)]
+pub struct BatchRoyaltyInfo {
+    /// The NFT token ID
+    pub token_id: u128,
+    /// The address that receives royalty payments (zero address if token doesn't exist)
+    pub recipient: Address,
+    /// Royalty numerator in basis points (e.g., 500 = 5%)
+    pub fee_numerator: u32,
+    /// Royalty denominator (always 10000 for basis points calculation)
+    pub fee_denominator: u32,
 }
 
 #[contracttype]
@@ -102,6 +121,86 @@ impl NFTContract {
         let mut royalty_map = Map::new(&env);
         royalty_map.set(royalty_info.recipient, royalty_info.bps);
         royalty_map
+    }
+
+    /// Batch query royalty information for multiple tokens in a single call
+    /// 
+    /// This is a pure view function with no state mutations or access control.
+    /// Anyone (including frontends without a wallet signer) can call this function.
+    /// 
+    /// # Parameters
+    /// * `token_ids` - Vector of token IDs to query
+    /// 
+    /// # Returns
+    /// Vector of `BatchRoyaltyInfo` structs in the same order as input.
+    /// - If a token doesn't exist or has no royalty set, returns a zero-value entry
+    /// - Output array length always equals input array length
+    /// - Output index matches input index (output[i] corresponds to token_ids[i])
+    /// 
+    /// # Edge Cases
+    /// - Empty input returns empty output immediately
+    /// - Non-existent tokens return zeroed struct (recipient = zero address, fees = 0)
+    /// - Does not revert on missing tokens
+    /// 
+    /// # Warning
+    /// Very large batches may hit RPC node gas/timeout limits. The caller should
+    /// manage request size based on their RPC provider's constraints.
+    /// Recommended batch size: 50-100 tokens per call.
+    /// 
+    /// # Example
+    /// ```ignore
+    /// let token_ids = vec![&env, 1, 2, 3];
+    /// let royalties = batch_royalty_info(env, token_ids);
+    /// // Returns 3 BatchRoyaltyInfo structs with royalty data for tokens 1, 2, 3
+    /// ```
+    pub fn batch_royalty_info(env: Env, token_ids: Vec<u128>) -> Vec<BatchRoyaltyInfo> {
+        // Handle empty input immediately
+        if token_ids.is_empty() {
+            return Vec::new(&env);
+        }
+
+        let mut results = Vec::new(&env);
+        
+        // Iterate over input token IDs and collect royalty info
+        for i in 0..token_ids.len() {
+            let token_id = token_ids.get(i).unwrap();
+            
+            // Try to get royalty info for this token
+            let royalty_info_opt: Option<RoyaltyInfo> = env.storage()
+                .instance()
+                .get(&DataKey::TokenRoyalty(token_id));
+            
+            let batch_info = match royalty_info_opt {
+                Some(royalty_info) => {
+                    // Token exists - return actual royalty data
+                    BatchRoyaltyInfo {
+                        token_id,
+                        recipient: royalty_info.recipient,
+                        fee_numerator: royalty_info.bps,
+                        fee_denominator: 10000, // Basis points denominator
+                    }
+                }
+                None => {
+                    // Token doesn't exist - return zero-value entry
+                    // Create a zero address (all zeros)
+                    let zero_address = Address::from_string(&String::from_str(
+                        &env,
+                        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+                    ));
+                    
+                    BatchRoyaltyInfo {
+                        token_id,
+                        recipient: zero_address,
+                        fee_numerator: 0,
+                        fee_denominator: 10000,
+                    }
+                }
+            };
+            
+            results.push_back(batch_info);
+        }
+        
+        results
     }
 
 
@@ -311,5 +410,210 @@ mod test {
 
         let royalties = client.get_royalties(&token_id);
         assert_eq!(royalties.get(creator).unwrap(), 1000);
+    }
+
+    #[test]
+    fn test_batch_royalty_info_multiple_tokens() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, NFTContract);
+        let client = NFTContractClient::new(&env, &contract_id);
+
+        let creator1 = Address::generate(&env);
+        let creator2 = Address::generate(&env);
+        let creator3 = Address::generate(&env);
+
+        // Mint three tokens with different royalties
+        client.mint(
+            &creator1,
+            &1,
+            &String::from_str(&env, "ipfs://token1"),
+            &creator1,
+            &500, // 5% royalty
+        );
+
+        client.mint(
+            &creator2,
+            &2,
+            &String::from_str(&env, "ipfs://token2"),
+            &creator2,
+            &1000, // 10% royalty
+        );
+
+        client.mint(
+            &creator3,
+            &3,
+            &String::from_str(&env, "ipfs://token3"),
+            &creator3,
+            &1500, // 15% royalty
+        );
+
+        // Batch query all three tokens
+        let token_ids = Vec::from_array(&env, [1u128, 2u128, 3u128]);
+        let batch_results = client.batch_royalty_info(&token_ids);
+
+        // Verify results
+        assert_eq!(batch_results.len(), 3);
+
+        // Token 1
+        let info1 = batch_results.get(0).unwrap();
+        assert_eq!(info1.token_id, 1);
+        assert_eq!(info1.recipient, creator1);
+        assert_eq!(info1.fee_numerator, 500);
+        assert_eq!(info1.fee_denominator, 10000);
+
+        // Token 2
+        let info2 = batch_results.get(1).unwrap();
+        assert_eq!(info2.token_id, 2);
+        assert_eq!(info2.recipient, creator2);
+        assert_eq!(info2.fee_numerator, 1000);
+        assert_eq!(info2.fee_denominator, 10000);
+
+        // Token 3
+        let info3 = batch_results.get(2).unwrap();
+        assert_eq!(info3.token_id, 3);
+        assert_eq!(info3.recipient, creator3);
+        assert_eq!(info3.fee_numerator, 1500);
+        assert_eq!(info3.fee_denominator, 10000);
+    }
+
+    #[test]
+    fn test_batch_royalty_info_with_nonexistent_tokens() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, NFTContract);
+        let client = NFTContractClient::new(&env, &contract_id);
+
+        let creator = Address::generate(&env);
+
+        // Mint only token 1 and 3, skip token 2
+        client.mint(
+            &creator,
+            &1,
+            &String::from_str(&env, "ipfs://token1"),
+            &creator,
+            &500,
+        );
+
+        client.mint(
+            &creator,
+            &3,
+            &String::from_str(&env, "ipfs://token3"),
+            &creator,
+            &1500,
+        );
+
+        // Query tokens 1, 2 (doesn't exist), 3
+        let token_ids = Vec::from_array(&env, [1u128, 2u128, 3u128]);
+        let batch_results = client.batch_royalty_info(&token_ids);
+
+        // Should return 3 results, with token 2 having zero values
+        assert_eq!(batch_results.len(), 3);
+
+        // Token 1 - exists
+        let info1 = batch_results.get(0).unwrap();
+        assert_eq!(info1.token_id, 1);
+        assert_eq!(info1.recipient, creator);
+        assert_eq!(info1.fee_numerator, 500);
+
+        // Token 2 - doesn't exist, should have zero values
+        let info2 = batch_results.get(1).unwrap();
+        assert_eq!(info2.token_id, 2);
+        assert_eq!(info2.fee_numerator, 0);
+        assert_eq!(info2.fee_denominator, 10000);
+        // recipient should be zero address
+
+        // Token 3 - exists
+        let info3 = batch_results.get(2).unwrap();
+        assert_eq!(info3.token_id, 3);
+        assert_eq!(info3.recipient, creator);
+        assert_eq!(info3.fee_numerator, 1500);
+    }
+
+    #[test]
+    fn test_batch_royalty_info_empty_input() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, NFTContract);
+        let client = NFTContractClient::new(&env, &contract_id);
+
+        // Query with empty array
+        let token_ids: Vec<u128> = Vec::new(&env);
+        let batch_results = client.batch_royalty_info(&token_ids);
+
+        // Should return empty array
+        assert_eq!(batch_results.len(), 0);
+    }
+
+    #[test]
+    fn test_batch_royalty_info_order_preservation() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, NFTContract);
+        let client = NFTContractClient::new(&env, &contract_id);
+
+        let creator = Address::generate(&env);
+
+        // Mint tokens in non-sequential order
+        client.mint(
+            &creator,
+            &10,
+            &String::from_str(&env, "ipfs://token10"),
+            &creator,
+            &300,
+        );
+
+        client.mint(
+            &creator,
+            &5,
+            &String::from_str(&env, "ipfs://token5"),
+            &creator,
+            &700,
+        );
+
+        client.mint(
+            &creator,
+            &15,
+            &String::from_str(&env, "ipfs://token15"),
+            &creator,
+            &1200,
+        );
+
+        // Query in specific order: 15, 5, 10
+        let token_ids = Vec::from_array(&env, [15u128, 5u128, 10u128]);
+        let batch_results = client.batch_royalty_info(&token_ids);
+
+        // Verify order is preserved
+        assert_eq!(batch_results.len(), 3);
+        assert_eq!(batch_results.get(0).unwrap().token_id, 15);
+        assert_eq!(batch_results.get(0).unwrap().fee_numerator, 1200);
+        assert_eq!(batch_results.get(1).unwrap().token_id, 5);
+        assert_eq!(batch_results.get(1).unwrap().fee_numerator, 700);
+        assert_eq!(batch_results.get(2).unwrap().token_id, 10);
+        assert_eq!(batch_results.get(2).unwrap().fee_numerator, 300);
+    }
+
+    #[test]
+    fn test_batch_royalty_info_single_token() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, NFTContract);
+        let client = NFTContractClient::new(&env, &contract_id);
+
+        let creator = Address::generate(&env);
+
+        client.mint(
+            &creator,
+            &42,
+            &String::from_str(&env, "ipfs://token42"),
+            &creator,
+            &850,
+        );
+
+        // Query single token
+        let token_ids = Vec::from_array(&env, [42u128]);
+        let batch_results = client.batch_royalty_info(&token_ids);
+
+        assert_eq!(batch_results.len(), 1);
+        let info = batch_results.get(0).unwrap();
+        assert_eq!(info.token_id, 42);
+        assert_eq!(info.recipient, creator);
+        assert_eq!(info.fee_numerator, 850);
+        assert_eq!(info.fee_denominator, 10000);
     }
 }

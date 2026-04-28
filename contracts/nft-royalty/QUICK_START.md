@@ -1,8 +1,8 @@
-# Quick Start Guide - Platform Fee Tracking
+# Quick Start Guide - Platform Fee Tracking & Batch Royalty Query
 
 ## TL;DR
 
-This smart contract tracks all platform fees (5% of NFT sales) in a public, transparent way.
+This smart contract tracks all platform fees (5% of NFT sales) in a public, transparent way and supports batch querying of royalty data for multiple tokens in a single call.
 
 ## Quick Commands
 
@@ -19,6 +19,11 @@ cargo test
 
 # Query platform revenue (after backend is running)
 curl http://localhost:3000/platform/revenue
+
+# Batch query royalties for multiple tokens
+curl -X POST http://localhost:3000/nft/batch-royalty \
+  -H "Content-Type: application/json" \
+  -d '{"tokenIds": [1, 2, 3, 4, 5]}'
 ```
 
 ## Key Functions
@@ -37,6 +42,9 @@ execute_royalty_payment(
 
 // Get total platform revenue (public, read-only)
 get_platform_revenue() -> u128
+
+// Batch query royalties for multiple tokens (public, read-only)
+batch_royalty_info(token_ids: Vec<u128>) -> Vec<BatchRoyaltyInfo>
 ```
 
 ### Backend API
@@ -51,9 +59,27 @@ GET /platform/revenue
   "totalFeesXLM": "5.0000000",
   "lastUpdated": "2026-04-28T10:30:00.000Z"
 }
+
+# Batch query royalties
+POST /nft/batch-royalty
+Body: {"tokenIds": [1, 2, 3, 4, 5]}
+
+# Response
+[
+  {
+    "tokenId": "1",
+    "recipient": "GABC...",
+    "feeNumerator": 500,
+    "feeDenominator": 10000,
+    "royaltyPercentage": "5.00%"
+  },
+  ...
+]
 ```
 
 ## How It Works
+
+### Platform Fee Tracking
 
 1. User buys an NFT for 100 XLM
 2. Contract calculates:
@@ -64,7 +90,20 @@ GET /platform/revenue
 4. Emits `PlatformFeeCollected` event
 5. Anyone can query total via `get_platform_revenue()`
 
+### Batch Royalty Query
+
+1. Frontend needs royalty data for tokens [1, 2, 3, 4, 5]
+2. Makes single API call: `POST /nft/batch-royalty`
+3. Backend queries contract's `batch_royalty_info([1, 2, 3, 4, 5])`
+4. Contract returns array with royalty data for all 5 tokens
+5. Non-existent tokens return zero values (no error)
+6. Results cached for 5 minutes
+
+**Performance**: 1 RPC call instead of 5 = 80% faster!
+
 ## Example Flow
+
+### Platform Fee Tracking
 
 ```rust
 // Mint NFT with 10% royalty
@@ -84,6 +123,25 @@ let total = get_platform_revenue();
 // Returns: 50_000_000 (5 XLM in stroops)
 ```
 
+### Batch Royalty Query
+
+```rust
+// Mint multiple NFTs with different royalties
+mint(creator1, 1, "ipfs://1", creator1, 500);   // 5%
+mint(creator2, 2, "ipfs://2", creator2, 1000);  // 10%
+mint(creator3, 3, "ipfs://3", creator3, 1500);  // 15%
+
+// Query all at once
+let token_ids = vec![&env, 1, 2, 3];
+let royalties = batch_royalty_info(token_ids);
+
+// Access results
+for i in 0..royalties.len() {
+    let info = royalties.get(i).unwrap();
+    // info.token_id, info.recipient, info.fee_numerator
+}
+```
+
 ## Testing
 
 ```bash
@@ -97,12 +155,21 @@ test test::test_platform_fee_tracking ... ok
 
 ## Verification Checklist
 
+### Platform Fee Tracking
 - [ ] Contract builds without errors
-- [ ] Tests pass
+- [ ] Tests pass (`cargo test test_platform_fee_tracking`)
 - [ ] Contract deployed to testnet
 - [ ] Backend can query `get_platform_revenue()`
 - [ ] API endpoint returns revenue data
 - [ ] Events are emitted on fee collection
+
+### Batch Royalty Query
+- [ ] Tests pass (`cargo test test_batch_royalty_info`)
+- [ ] Backend can query `batch_royalty_info()`
+- [ ] API endpoint accepts token ID arrays
+- [ ] Non-existent tokens return zero values
+- [ ] Order is preserved (output[i] = input[i])
+- [ ] Empty input returns empty output
 
 ## Constants
 
@@ -115,9 +182,12 @@ test test::test_platform_fee_tracking ... ok
 - `src/lib.rs` - Main contract code
 - `Cargo.toml` - Dependencies
 - `scripts/deploy.sh` - Deployment script
-- `PLATFORM_FEE_TRACKING.md` - Detailed docs
+- `PLATFORM_FEE_TRACKING.md` - Platform fee docs
+- `BATCH_ROYALTY_QUERY.md` - Batch query docs
 - `README.md` - Full documentation
 
 ## Need Help?
 
-See `PLATFORM_FEE_TRACKING.md` for detailed implementation guide.
+- Platform Fee Tracking: See `PLATFORM_FEE_TRACKING.md`
+- Batch Royalty Query: See `BATCH_ROYALTY_QUERY.md`
+- Full Documentation: See `README.md`

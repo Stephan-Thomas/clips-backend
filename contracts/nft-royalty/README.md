@@ -106,6 +106,19 @@ execute_royalty_payment(
 get_platform_revenue() -> u128
 ```
 
+### Batch Royalty Query
+```rust
+batch_royalty_info(token_ids: Vec<u128>) -> Vec<BatchRoyaltyInfo>
+```
+
+Fetch royalty information for multiple tokens in a single call. Returns an array of `BatchRoyaltyInfo` structs with:
+- `token_id`: The NFT token ID
+- `recipient`: Royalty recipient address
+- `fee_numerator`: Royalty in basis points (e.g., 500 = 5%)
+- `fee_denominator`: Always 10000 (basis points)
+
+Non-existent tokens return zero values instead of reverting. See `BATCH_ROYALTY_QUERY.md` for details.
+
 ### Other Functions
 - `owner_of(token_id: u128) -> Address`
 - `get_royalties(token_id: u128) -> Map<Address, u32>`
