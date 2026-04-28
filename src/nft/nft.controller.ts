@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { NftService, MintResult } from './nft.service';
@@ -32,6 +33,7 @@ export class NftController {
    */
   @Post('mint')
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ nftMint: { limit: 5, ttl: 60000 } })
   async mint(@Body() dto: MintClipDto): Promise<MintResult> {
     return this.nftService.mintClip(dto);
   }
@@ -44,6 +46,7 @@ export class NftController {
   @UseGuards(LoginGuard)
   @Post('prepare-mint')
   @HttpCode(HttpStatus.CREATED)
+  @Throttle({ nftMint: { limit: 5, ttl: 60000 } })
   async prepareMint(
     @Body() dto: PrepareMintDto,
     @Req() req: Request,

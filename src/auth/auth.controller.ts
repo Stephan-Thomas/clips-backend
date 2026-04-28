@@ -116,6 +116,7 @@ export class AuthController {
   }
 
   @Post('magic-link')
+  @Throttle({ sensitive: { limit: 3, ttl: 900000 } })
   async requestMagicLink(
     @Body(new ValidationPipe({ transform: true })) dto: MagicLinkRequestDto,
   ) {
@@ -147,6 +148,7 @@ export class AuthController {
   }
 
   @Get('verify-email')
+  @Throttle({ emailVerify: { limit: 3, ttl: 3600000 } })
   async verifyEmail(@Query('token') token: string) {
     if (!token) {
       throw new BadRequestException('Token is required');
@@ -195,6 +197,7 @@ export class AuthController {
 
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ sensitive: { limit: 3, ttl: 900000 } })
   async forgotPassword(
     @Body(new ValidationPipe({ transform: true })) dto: ForgotPasswordDto,
   ) {
