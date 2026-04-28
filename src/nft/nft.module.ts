@@ -11,9 +11,10 @@ import { NftMintService } from '../clips/nft-mint.service';
 import { NftOwnershipService } from './nft-ownership.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StellarModule } from '../stellar/stellar.module';
+import { RedisModule } from '../redis/redis.module';
 
 @Module({
-  imports: [PrismaModule, StellarModule],
+  imports: [PrismaModule, StellarModule, RedisModule],
   providers: [
     NftConfig,
     NftService,

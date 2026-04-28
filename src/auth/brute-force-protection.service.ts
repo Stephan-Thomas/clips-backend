@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import Redis from 'ioredis';
+import { RedisService } from '../redis/redis.service';
 
 export interface BruteForceConfig {
   maxAttempts: number;
@@ -10,18 +10,14 @@ export interface BruteForceConfig {
 
 @Injectable()
 export class BruteForceProtectionService {
-  private readonly redis: Redis;
   private readonly logger = new Logger(BruteForceProtectionService.name);
   private readonly config: BruteForceConfig;
+  private readonly redis = this.redisService.getClient();
 
-  constructor(private configService: ConfigService) {
-    this.redis = new Redis({
-      host: this.configService.get<string>('REDIS_HOST', 'localhost'),
-      port: this.configService.get<number>('REDIS_PORT', 6379),
-      password: this.configService.get<string>('REDIS_PASSWORD'),
-      maxRetriesPerRequest: 3,
-    });
-
+  constructor(
+    private configService: ConfigService,
+    private redisService: RedisService,
+  ) {
     this.config = {
       maxAttempts: this.configService.get<number>(
         'BRUTE_FORCE_MAX_ATTEMPTS',
@@ -36,10 +32,6 @@ export class BruteForceProtectionService {
         900,
       ), // 15 minutes
     };
-
-    this.redis.on('error', (error) => {
-      this.logger.error('Redis connection error:', error);
-    });
   }
 
   async recordFailedAttempt(email: string): Promise<{
@@ -143,9 +135,4 @@ export class BruteForceProtectionService {
     }
   }
 
-  onModuleDestroy() {
-    if (this.redis) {
-      this.redis.disconnect();
-    }
-  }
 }

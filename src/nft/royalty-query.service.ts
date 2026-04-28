@@ -5,8 +5,8 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { StellarService } from '../stellar/stellar.service';
+import { RedisService } from '../redis/redis.service';
 import StellarSdk from '@stellar/stellar-sdk';
-import Redis from 'ioredis';
 
 const CACHE_TTL_SECONDS = 300; // 5 minutes
 
@@ -18,19 +18,19 @@ export interface RoyaltyInfo {
 @Injectable()
 export class RoyaltyQueryService {
   private readonly logger = new Logger(RoyaltyQueryService.name);
-  private readonly redis: Redis;
+  private readonly CONTRACT_ID: string;
 
-  private readonly CONTRACT_ID =
-    process.env.SOROBAN_NFT_CONTRACT_ID ||
-    'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEU4';
-
-  constructor(private readonly stellarService: StellarService) {
-    this.redis = new Redis({
-      host: process.env.REDIS_HOST ?? 'localhost',
-      port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
-      password: process.env.REDIS_PASSWORD || undefined,
-      lazyConnect: true,
-    });
+  constructor(
+    private readonly stellarService: StellarService,
+    private readonly redisService: RedisService,
+  ) {
+    const contractId = process.env.SOROBAN_NFT_CONTRACT_ID;
+    if (!contractId) {
+      throw new InternalServerErrorException(
+        'SOROBAN_NFT_CONTRACT_ID environment variable is required and must be set',
+      );
+    }
+    this.CONTRACT_ID = contractId;
   }
 
   /**
@@ -40,27 +40,15 @@ export class RoyaltyQueryService {
   async getRoyaltyInfo(mintAddress: string): Promise<RoyaltyInfo> {
     const cacheKey = `royalty:${mintAddress}`;
 
-    try {
-      const cached = await this.redis.get(cacheKey);
-      if (cached) {
-        this.logger.debug(`Cache hit for royalty:${mintAddress}`);
-        return JSON.parse(cached) as RoyaltyInfo;
-      }
-    } catch (err) {
-      this.logger.warn(
-        `Redis read failed for ${cacheKey}: ${(err as Error).message}`,
-      );
+    const cached = await this.redisService.get(cacheKey);
+    if (cached) {
+      this.logger.debug(`Cache hit for royalty:${mintAddress}`);
+      return JSON.parse(cached) as RoyaltyInfo;
     }
 
     const result = await this.queryOnChainRoyalty(mintAddress);
 
-    try {
-      await this.redis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(result));
-    } catch (err) {
-      this.logger.warn(
-        `Redis write failed for ${cacheKey}: ${(err as Error).message}`,
-      );
-    }
+    await this.redisService.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(result));
 
     return result;
   }

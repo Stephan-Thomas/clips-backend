@@ -1,7 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BatchRoyaltyService } from './batch-royalty.service';
 import { StellarService } from '../stellar/stellar.service';
-import { BadRequestException } from '@nestjs/common';
+import { RedisService } from '../redis/redis.service';
+import { BadRequestException, InternalServerErrorException } from '@nestjs/common';
 
 describe('BatchRoyaltyService', () => {
   let service: BatchRoyaltyService;
@@ -13,13 +14,25 @@ describe('BatchRoyaltyService', () => {
     network: 'testnet',
   };
 
+  const mockRedisService = {
+    get: jest.fn().mockResolvedValue(null),
+    setex: jest.fn().mockResolvedValue(undefined),
+    del: jest.fn().mockResolvedValue(undefined),
+  };
+
   beforeEach(async () => {
+    jest.resetModules();
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BatchRoyaltyService,
         {
           provide: StellarService,
           useValue: mockStellarService,
+        },
+        {
+          provide: RedisService,
+          useValue: mockRedisService,
         },
       ],
     }).compile();
@@ -50,17 +63,33 @@ describe('BatchRoyaltyService', () => {
         service.getBatchRoyaltyInfo(largeArray),
       ).rejects.toThrow(BadRequestException);
     });
-
-    it('should accept string and number token IDs', async () => {
-      // This test would require mocking the Stellar RPC response
-      // For now, we just verify the service structure
-      expect(service.getBatchRoyaltyInfo).toBeDefined();
-    });
   });
 
   describe('clearCache', () => {
     it('should clear cache for given token IDs', async () => {
       await expect(service.clearCache([1, 2, 3])).resolves.not.toThrow();
+    });
+  });
+
+  describe('module initialization', () => {
+    it('should throw InternalServerErrorException when SOROBAN_NFT_CONTRACT_ID is not set', async () => {
+      delete process.env.SOROBAN_NFT_CONTRACT_ID;
+
+      const module = Test.createTestingModule({
+        providers: [
+          BatchRoyaltyService,
+          {
+            provide: StellarService,
+            useValue: mockStellarService,
+          },
+          {
+            provide: RedisService,
+            useValue: mockRedisService,
+          },
+        ],
+      });
+
+      await expect(module.compile()).rejects.toThrow(InternalServerErrorException);
     });
   });
 });

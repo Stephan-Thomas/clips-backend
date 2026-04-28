@@ -4,8 +4,8 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { StellarService } from '../stellar/stellar.service';
+import { RedisService } from '../redis/redis.service';
 import StellarSdk from '@stellar/stellar-sdk';
-import Redis from 'ioredis';
 
 const CACHE_TTL_SECONDS = 60; // 1 minute cache for revenue data
 
@@ -22,19 +22,19 @@ export interface PlatformRevenueInfo {
 @Injectable()
 export class PlatformRevenueService {
   private readonly logger = new Logger(PlatformRevenueService.name);
-  private readonly redis: Redis;
+  private readonly CONTRACT_ID: string;
 
-  private readonly CONTRACT_ID =
-    process.env.SOROBAN_NFT_CONTRACT_ID ||
-    'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEU4';
-
-  constructor(private readonly stellarService: StellarService) {
-    this.redis = new Redis({
-      host: process.env.REDIS_HOST ?? 'localhost',
-      port: parseInt(process.env.REDIS_PORT ?? '6379', 10),
-      password: process.env.REDIS_PASSWORD || undefined,
-      lazyConnect: true,
-    });
+  constructor(
+    private readonly stellarService: StellarService,
+    private readonly redisService: RedisService,
+  ) {
+    const contractId = process.env.SOROBAN_NFT_CONTRACT_ID;
+    if (!contractId) {
+      throw new InternalServerErrorException(
+        'SOROBAN_NFT_CONTRACT_ID environment variable is required and must be set',
+      );
+    }
+    this.CONTRACT_ID = contractId;
   }
 
   /**
@@ -45,31 +45,19 @@ export class PlatformRevenueService {
   async getPlatformRevenue(): Promise<PlatformRevenueInfo> {
     const cacheKey = 'platform:revenue:total';
 
-    try {
-      const cached = await this.redis.get(cacheKey);
-      if (cached) {
-        this.logger.debug('Cache hit for platform revenue');
-        return JSON.parse(cached) as PlatformRevenueInfo;
-      }
-    } catch (err) {
-      this.logger.warn(
-        `Redis read failed for ${cacheKey}: ${(err as Error).message}`,
-      );
+    const cached = await this.redisService.get(cacheKey);
+    if (cached) {
+      this.logger.debug('Cache hit for platform revenue');
+      return JSON.parse(cached) as PlatformRevenueInfo;
     }
 
     const result = await this.queryOnChainRevenue();
 
-    try {
-      await this.redis.setex(
-        cacheKey,
-        CACHE_TTL_SECONDS,
-        JSON.stringify(result),
-      );
-    } catch (err) {
-      this.logger.warn(
-        `Redis write failed for ${cacheKey}: ${(err as Error).message}`,
-      );
-    }
+    await this.redisService.setex(
+      cacheKey,
+      CACHE_TTL_SECONDS,
+      JSON.stringify(result),
+    );
 
     return result;
   }
@@ -145,13 +133,7 @@ export class PlatformRevenueService {
    * Useful after a royalty payment is executed to get fresh data.
    */
   async clearCache(): Promise<void> {
-    try {
-      await this.redis.del('platform:revenue:total');
-      this.logger.debug('Platform revenue cache cleared');
-    } catch (err) {
-      this.logger.warn(
-        `Failed to clear revenue cache: ${(err as Error).message}`,
-      );
-    }
+    await this.redisService.del('platform:revenue:total');
+    this.logger.debug('Platform revenue cache cleared');
   }
 }
