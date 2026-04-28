@@ -1,4 +1,13 @@
-import { IsString, IsNotEmpty, IsOptional, IsUrl } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsUrl,
+  IsInt,
+  Min,
+  Max,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class MintClipDto {
   /** ID of the clip being minted */
@@ -15,4 +24,15 @@ export class MintClipDto {
   @IsOptional()
   @IsUrl()
   metadataUri?: string;
+
+  /**
+   * NFT royalty in Basis Points (BPS). 0–10000 (0–100%).
+   * Defaults to 1000 (10%) if not provided.
+   */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(10000)
+  @Type(() => Number)
+  royaltyBps?: number;
 }
