@@ -32,6 +32,13 @@ export interface ListClipsOptions {
   sortBy?: ClipSortField;
   order?: SortOrder;
   statusFilter?: Clip['status'];
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginatedClips {
+  data: any[];
+  meta: { total: number; page: number; limit: number; totalPages: number };
 }
 
 export interface BulkUpdateResult {
@@ -282,31 +289,36 @@ export class ClipsService {
   /**
    * Find clips for a specific video, or all clips.
    */
-  async listClips(options: ListClipsOptions = {}): Promise<any[]> {
-    const { videoId, sortBy = 'viralityScore', order = 'desc' } = options;
+  async listClips(options: ListClipsOptions = {}): Promise<PaginatedClips> {
+    const { videoId, sortBy = 'viralityScore', order = 'desc', page = 1, limit = 20 } = options;
+
+    if (limit < 1 || limit > 100) {
+      throw new BadRequestException('limit must be between 1 and 100');
+    }
+    if (page < 1) {
+      throw new BadRequestException('page must be >= 1');
+    }
 
     const where: any = {};
-    if (videoId) {
-      where.videoId = Number(videoId);
-    }
+    if (videoId) where.videoId = Number(videoId);
 
     const orderBy: any = [];
-    if (sortBy === 'viralityScore') {
-      orderBy.push({ viralityScore: order });
-    } else if (sortBy === 'createdAt') {
-      orderBy.push({ createdAt: order });
-    } else if (sortBy === 'duration') {
-      orderBy.push({ duration: order });
-    }
+    if (sortBy === 'viralityScore') orderBy.push({ viralityScore: order });
+    else if (sortBy === 'createdAt') orderBy.push({ createdAt: order });
+    else if (sortBy === 'duration') orderBy.push({ duration: order });
+    if (sortBy !== 'createdAt') orderBy.push({ createdAt: 'desc' });
 
-    if (sortBy !== 'createdAt') {
-      orderBy.push({ createdAt: 'desc' });
-    }
+    const [total, data] = await Promise.all([
+      this.prisma.clip.count({ where }),
+      this.prisma.clip.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+    ]);
 
-    return this.prisma.clip.findMany({
-      where,
-      orderBy,
-    });
+    return { data, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } };
   }
 
   async bulkDeleteRejected(userId: number, clipIds: number[]) {

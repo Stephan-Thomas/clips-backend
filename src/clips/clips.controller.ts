@@ -6,6 +6,7 @@ import {
   Param,
   Query,
   NotFoundException,
+  BadRequestException,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -54,7 +55,16 @@ export class ClipsController {
     @Query('sort') sort?: string,
     @Query('sortBy') sortBy?: ClipSortField,
     @Query('order') order?: SortOrder,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
+    const parsedPage = page !== undefined ? parseInt(page, 10) : 1;
+    const parsedLimit = limit !== undefined ? parseInt(limit, 10) : 20;
+
+    if (isNaN(parsedPage) || isNaN(parsedLimit)) {
+      throw new BadRequestException('page and limit must be integers');
+    }
+
     let finalSortBy = sortBy;
     let finalOrder = order;
 
@@ -68,6 +78,8 @@ export class ClipsController {
       videoId,
       sortBy: finalSortBy,
       order: finalOrder,
+      page: parsedPage,
+      limit: parsedLimit,
     });
   }
 

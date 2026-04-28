@@ -1,21 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ValidationPipe } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { AuthController } from './auth.controller';
 import { SignupDto } from './dto/signup.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { MailService } from './mail.service';
+import { DeviceFingerprintService } from './device-fingerprint.service';
+import { BruteForceProtectionService } from './brute-force-protection.service';
 import * as bcrypt from 'bcrypt';
 
 describe('Auth - Password Strength Validation', () => {
-  let controller: AuthController;
   let service: AuthService;
   let prismaService: PrismaService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      controllers: [AuthController],
       providers: [
         AuthService,
         {
@@ -26,6 +25,9 @@ describe('Auth - Password Strength Validation', () => {
               create: jest.fn(),
             },
             refreshToken: {
+              create: jest.fn(),
+            },
+            emailVerificationToken: {
               create: jest.fn(),
             },
           },
@@ -41,12 +43,20 @@ describe('Auth - Password Strength Validation', () => {
           useValue: {
             sendMagicLink: jest.fn(),
             sendPasswordResetLink: jest.fn(),
+            sendVerificationEmail: jest.fn(),
           },
+        },
+        {
+          provide: DeviceFingerprintService,
+          useValue: { getFingerprint: jest.fn() },
+        },
+        {
+          provide: BruteForceProtectionService,
+          useValue: { check: jest.fn(), record: jest.fn() },
         },
       ],
     }).compile();
 
-    controller = module.get<AuthController>(AuthController);
     service = module.get<AuthService>(AuthService);
     prismaService = module.get<PrismaService>(PrismaService);
   });
@@ -54,12 +64,13 @@ describe('Auth - Password Strength Validation', () => {
   describe('POST /auth/signup', () => {
     it('should reject weak passwords (too short)', async () => {
       const signupDto: SignupDto = {
+        name: 'Test User',
         email: 'test@example.com',
         password: '123456', // Less than 10 characters
       };
 
       try {
-        await controller.signup(signupDto);
+        await service.signup(signupDto);
       } catch (error) {
         // Validation should fail before reaching service
       }
@@ -67,6 +78,7 @@ describe('Auth - Password Strength Validation', () => {
 
     it('should reject weak passwords without numbers/symbols', async () => {
       const signupDto: SignupDto = {
+        name: 'Test User',
         email: 'test@example.com',
         password: 'passwordpassword', // 16 chars but low strength score
       };
@@ -90,6 +102,7 @@ describe('Auth - Password Strength Validation', () => {
       (prismaService.user.create as jest.Mock).mockResolvedValue(mockUser);
 
       const signupDto: SignupDto = {
+        name: 'Test User',
         email,
         password,
       };
@@ -110,6 +123,7 @@ describe('Auth - Password Strength Validation', () => {
       });
 
       const signupDto: SignupDto = {
+        name: 'Existing User',
         email,
         password: 'MyStr0ng!P@ssw0rd',
       };
@@ -155,7 +169,7 @@ describe('Auth - Password Strength Validation', () => {
       (prismaService.user.findUnique as jest.Mock).mockResolvedValue(null);
       (prismaService.user.create as jest.Mock).mockResolvedValue(mockUser);
 
-      await service.signup({ email, password });
+      await service.signup({ name: 'Test User', email, password });
 
       const createCall = (prismaService.user.create as jest.Mock).mock
         .calls[0][0];

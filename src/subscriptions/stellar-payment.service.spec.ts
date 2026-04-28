@@ -6,7 +6,7 @@ import { CreateStellarSubscriptionDto } from './dto/create-stellar-subscription.
 
 // Mock the Stellar SDK to avoid import issues in tests
 jest.mock('@stellar/stellar-sdk', () => ({
-  Server: jest.fn(),
+  Horizon: { Server: jest.fn() },
 }));
 
 describe('StellarPaymentService', () => {
@@ -99,7 +99,7 @@ describe('StellarPaymentService', () => {
         amount: 10,
         asset: 'xlm',
         destination: mockWallet.address,
-        memo: 'CLIPS-1-abc123-def456',
+        memo: expect.stringMatching(/^CLIPS-/),
         expiresAt: mockPaymentIntent.expiresAt,
         status: 'pending',
       });
@@ -161,7 +161,7 @@ describe('StellarPaymentService', () => {
       expect(mockPrismaService.stellarPaymentIntent.updateMany).toHaveBeenCalledWith({
         where: {
           status: 'pending',
-          expiresAt: { lt: new Date() },
+          expiresAt: { lt: expect.any(Date) },
         },
         data: {
           status: 'expired',

@@ -108,7 +108,7 @@ describe('WalletsService.connect', () => {
 
   it('upserts a wallet with valid Stellar address', async () => {
     const dto = {
-      address: 'GDH6VVE7RUCV664TYL5ZTP4YTL6H64XG76Z7Z7Z7Z7Z7Z7Z7Z7Z7Z7Z7',
+      address: 'GC6XOTK6L6LGBKIWH3IRUZPVUY4COGEMW4J5YINOSPKO27YKTUUHTZF3',
       chain: 'stellar',
       type: 'freighter',
     };

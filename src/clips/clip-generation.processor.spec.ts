@@ -128,7 +128,7 @@ describe('ClipGenerationProcessor', () => {
         secure_url: '',
         public_id: 'test-clip',
         error: 'Network timeout',
-      });
+      } as any);
 
       const clip = await processor.process(makeJob());
 
@@ -144,7 +144,7 @@ describe('ClipGenerationProcessor', () => {
         secure_url: '',
         public_id: 'test-clip',
         error: 'Upload failed',
-      });
+      } as any);
       const deleteLocalFileSpy = jest.spyOn(
         cloudinaryService,
         'deleteLocalFile',

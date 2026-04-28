@@ -13,6 +13,7 @@ function makeClip(overrides: Partial<Clip> = {}): Clip {
     userId: 'user-1',
     startTime: 0,
     endTime: 30,
+    duration: 30,
     positionRatio: 0.5,
     viralityScore: 80,
     selected: false,
@@ -34,7 +35,7 @@ function makeService() {
     },
   };
   // ClipGenerationProcessor not needed for bulk-update tests
-  const service = new ClipsService(null as any, emitter, prisma as any);
+  const service = new ClipsService(null as any, emitter, prisma as any, null as any);
   return { service, emitter, prisma };
 }
 
@@ -54,7 +55,7 @@ describe('ClipsService.bulkUpdate', () => {
       return Promise.resolve(null);
     });
 
-    const result = await service.bulkUpdate('user-1', {
+    const result = await service.bulkUpdate('user-1' as any, {
       clipIds: ['c1', 'c2'],
       selected: true,
     });
@@ -72,7 +73,7 @@ describe('ClipsService.bulkUpdate', () => {
 
     prisma.clip.findUnique.mockResolvedValue(clip1);
 
-    await service.bulkUpdate('user-1', {
+    await service.bulkUpdate('user-1' as any, {
       clipIds: ['c1'],
       postStatus: 'posted',
     });
@@ -87,7 +88,7 @@ describe('ClipsService.bulkUpdate', () => {
     prisma.clip.findUnique.mockResolvedValue(clip1);
     const status = { platform: 'tiktok', postId: 'abc', status: 'posted' };
 
-    await service.bulkUpdate('user-1', { clipIds: ['c1'], postStatus: status });
+    await service.bulkUpdate('user-1' as any, { clipIds: ['c1'], postStatus: status });
 
     expect((await service.findById('c1'))!.postStatus).toEqual(status);
   });
@@ -101,7 +102,7 @@ describe('ClipsService.bulkUpdate', () => {
       return Promise.resolve(null);
     });
 
-    const result = await service.bulkUpdate('user-1', {
+    const result = await service.bulkUpdate('user-1' as any, {
       clipIds: ['c1', 'ghost-id'],
       selected: true,
     });
@@ -118,7 +119,7 @@ describe('ClipsService.bulkUpdate', () => {
 
     // All requested IDs are owned by another user → ForbiddenException
     await expect(
-      service.bulkUpdate('user-1', { clipIds: ['c1'], selected: true }),
+      service.bulkUpdate('user-1' as any, { clipIds: ['c1'], selected: true }),
     ).rejects.toThrow(ForbiddenException);
 
     // Clip must NOT have been mutated
@@ -129,7 +130,7 @@ describe('ClipsService.bulkUpdate', () => {
     const { service } = makeService();
 
     await expect(
-      service.bulkUpdate('user-1', { clipIds: ['nope'], selected: true }),
+      service.bulkUpdate('user-1' as any, { clipIds: ['nope'], selected: true }),
     ).rejects.toThrow(ForbiddenException);
   });
 
@@ -138,7 +139,7 @@ describe('ClipsService.bulkUpdate', () => {
     service._seed([makeClip({ id: 'c1' })]);
 
     await expect(
-      service.bulkUpdate('user-1', { clipIds: ['c1'] }),
+      service.bulkUpdate('user-1' as any, { clipIds: ['c1'] }),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -149,7 +150,7 @@ describe('ClipsService.bulkUpdate', () => {
       makeClip({ id: 'c2', videoId: 'v1', postStatus: null }),
     ]);
 
-    const result = await service.bulkUpdate('user-1', {
+    const result = await service.bulkUpdate('user-1' as any, {
       clipIds: ['c2'],
       postStatus: 'posted',
     });
@@ -168,7 +169,7 @@ describe('ClipsService.bulkUpdate', () => {
       makeClip({ id: 'c2', videoId: 'v1', postStatus: null }),
     ]);
 
-    const result = await service.bulkUpdate('user-1', {
+    const result = await service.bulkUpdate('user-1' as any, {
       clipIds: ['c1'],
       postStatus: 'posted',
     });
@@ -181,7 +182,7 @@ describe('ClipsService.bulkUpdate', () => {
     const { service } = makeService();
     service._seed([makeClip({ id: 'c1' })]);
 
-    const result = await service.bulkUpdate('user-1', {
+    const result = await service.bulkUpdate('user-1' as any, {
       clipIds: ['c1'],
       selected: true,
       postStatus: 'pending',

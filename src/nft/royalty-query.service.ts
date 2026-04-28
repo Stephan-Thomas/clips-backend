@@ -7,6 +7,7 @@ import {
 import { StellarService } from '../stellar/stellar.service';
 import StellarSdk from '@stellar/stellar-sdk';
 import Redis from 'ioredis';
+import { CacheKeyBuilder } from './cache-key.util';
 
 const CACHE_TTL_SECONDS = 300; // 5 minutes
 
@@ -38,7 +39,7 @@ export class RoyaltyQueryService {
    * Result is cached in Redis for 5 minutes.
    */
   async getRoyaltyInfo(mintAddress: string): Promise<RoyaltyInfo> {
-    const cacheKey = `royalty:${mintAddress}`;
+    const cacheKey = CacheKeyBuilder.royalty(mintAddress);
 
     try {
       const cached = await this.redis.get(cacheKey);

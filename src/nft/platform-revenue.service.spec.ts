@@ -41,6 +41,7 @@ describe('PlatformRevenueService', () => {
 
   describe('clearCache', () => {
     it('should clear the revenue cache', async () => {
+      jest.spyOn((service as any).redis, 'del').mockResolvedValue(1);
       await expect(service.clearCache()).resolves.not.toThrow();
     });
   });

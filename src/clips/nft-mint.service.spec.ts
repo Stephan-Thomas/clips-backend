@@ -66,13 +66,13 @@ describe('NftMintService uploadMetadataToIPFS', () => {
     const [metadata, clipId] = uploadSpy.mock.calls[0];
 
     expect(clipId).toBe(5);
-    expect(metadata).toMatchObject({
+    expect(metadata as any).toMatchObject({
       name: 'Amazing Clip',
       description: 'A test clip',
       image: 'https://cdn.example.com/thumb.jpg',
       animation_url: 'https://cdn.example.com/video.mp4',
     });
-    expect(metadata.attributes).toEqual(
+    expect((metadata as any).attributes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ trait_type: 'royaltyBps', value: 1000 }),
         expect.objectContaining({ trait_type: 'royaltyPercent', value: 10 }),

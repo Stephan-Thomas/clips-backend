@@ -7,6 +7,7 @@ import {
 import { StellarService } from '../stellar/stellar.service';
 import StellarSdk from '@stellar/stellar-sdk';
 import Redis from 'ioredis';
+import { CacheKeyBuilder } from './cache-key.util';
 
 const CACHE_TTL_SECONDS = 300; // 5 minutes
 
@@ -72,7 +73,7 @@ export class BatchRoyaltyService {
 
     // Convert all token IDs to strings for consistent caching
     const normalizedIds = tokenIds.map((id) => String(id));
-    const cacheKey = `batch_royalty:${normalizedIds.join(',')}`;
+    const cacheKey = CacheKeyBuilder.batchRoyalty(normalizedIds);
 
     // Try cache first
     if (!skipCache) {
@@ -201,7 +202,7 @@ export class BatchRoyaltyService {
    */
   async clearCache(tokenIds: (string | number)[]): Promise<void> {
     const normalizedIds = tokenIds.map((id) => String(id));
-    const cacheKey = `batch_royalty:${normalizedIds.join(',')}`;
+    const cacheKey = CacheKeyBuilder.batchRoyalty(normalizedIds);
 
     try {
       await this.redis.del(cacheKey);

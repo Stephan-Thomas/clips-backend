@@ -60,6 +60,7 @@ describe('BatchRoyaltyService', () => {
 
   describe('clearCache', () => {
     it('should clear cache for given token IDs', async () => {
+      jest.spyOn((service as any).redis, 'del').mockResolvedValue(1);
       await expect(service.clearCache([1, 2, 3])).resolves.not.toThrow();
     });
   });

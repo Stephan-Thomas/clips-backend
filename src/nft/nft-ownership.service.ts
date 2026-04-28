@@ -44,12 +44,12 @@ export class NftOwnershipService {
         return { isOwner: false, error: `Contract error: ${sim.error}` };
       }
 
-      if (!sim.results || sim.results.length === 0) {
+      if (!sim.result) {
         return { isOwner: false, error: 'No response from contract' };
       }
 
       // Parse the ScVal result back to a native JS number/BigInt
-      const balance = scValToNative(sim.results[0].retval);
+      const balance = scValToNative(sim.result.retval);
       
       return {
         isOwner: Number(balance) > 0,
