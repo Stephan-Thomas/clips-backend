@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -20,6 +20,8 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { RedisModule } from './redis/redis.module';
 import { EarningsModule } from './earnings/earnings.module';
 import { PayoutsModule } from './payouts/payouts.module';
+import { LoggerModule } from './logger/logger.module';
+import { RequestIdMiddleware } from './logger/request-id.middleware';
 
 @Module({
   imports: [
@@ -81,6 +83,7 @@ import { PayoutsModule } from './payouts/payouts.module';
         },
       }),
     }),
+    LoggerModule,
     AuthModule,
     ClipsModule,
     VideosModule,
@@ -104,4 +107,8 @@ import { PayoutsModule } from './payouts/payouts.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestIdMiddleware).forRoutes('*');
+  }
+}
