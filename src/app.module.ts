@@ -47,6 +47,30 @@ import { PayoutsModule } from './payouts/payouts.module';
             ttl: 60000,
             limit: 10,
           },
+          // 3 requests per 15 minutes — magic-link, forgot-password
+          {
+            name: 'sensitive',
+            ttl: 900000,
+            limit: 3,
+          },
+          // 3 requests per hour — email verification resend
+          {
+            name: 'emailVerify',
+            ttl: 3600000,
+            limit: 3,
+          },
+          // 10 requests per minute — clip generation (per user)
+          {
+            name: 'clipGenerate',
+            ttl: 60000,
+            limit: 10,
+          },
+          // 5 requests per minute — NFT mint (per user)
+          {
+            name: 'nftMint',
+            ttl: 60000,
+            limit: 5,
+          },
         ],
         skipIf: (context) => {
           const request = context.switchToHttp().getRequest();
