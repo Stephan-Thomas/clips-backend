@@ -38,13 +38,13 @@ export class BulkUpdateClipsDto {
 
   /**
    * NFT royalty percentage in Basis Points (BPS).
-   * 1000 BPS = 10%, range: 0–1500 BPS (0–15%).
+   * 1000 BPS = 10%, range: 0–10000 BPS (0–100%).
    * Used when minting clips as NFTs on Soroban/Stellar.
    * If not provided, defaults to 1000 (10%) at mint time.
    */
   @IsOptional()
   @IsInt()
   @Min(0)
-  @Max(1500)
+  @Max(10000)
   royaltyBps?: number;
 }

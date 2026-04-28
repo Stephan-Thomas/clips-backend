@@ -6,13 +6,14 @@ import {
   Param,
   Query,
   NotFoundException,
+  BadRequestException,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { ClipsService } from './clips.service.js';
 import type { ClipSortField, SortOrder } from './clips.service.js';
-import type { ClipGenerationJob } from './clip-generation.processor.js';
+import { CreateClipDto } from './dto/create-clip.dto.js';
 import type { BulkUpdateClipsDto } from './dto/bulk-update-clips.dto.js';
 import { LoginGuard } from '../auth/guards/login.guard.js';
 import { BulkDeleteClipsDto } from './dto/bulk-delete-clips.dto.js';
@@ -25,12 +26,19 @@ export class ClipsController {
   /**
    * POST /clips/generate
    * Enqueue a clip-generation job with automatic retry + exponential backoff.
-   * Returns the BullMQ job ID immediately; processing happens asynchronously.
-   *
-   * Body: { videoId, inputPath, outputPath, startTime, endTime, positionRatio, transcript? }
+   * Validates: startTime >= 0, endTime > startTime, duration 5–300 seconds.
    */
   @Post('generate')
-  generate(@Body() dto: ClipGenerationJob) {
+  generate(@Body() dto: CreateClipDto) {
+    const duration = dto.endTime - dto.startTime;
+    if (dto.endTime <= dto.startTime) {
+      throw new BadRequestException('endTime must be greater than startTime');
+    }
+    if (duration < 5 || duration > 300) {
+      throw new BadRequestException(
+        'Clip duration must be between 5 and 300 seconds',
+      );
+    }
     return this.clipsService.enqueueClip(dto);
   }
 
