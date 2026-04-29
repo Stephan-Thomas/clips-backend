@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { v2 as cloudinary } from 'cloudinary';
 import * as streamifier from 'streamifier';
 import * as fs from 'fs';
+import { MetricsService } from '../metrics/metrics.service';
 import { CircuitBreakerService, CircuitBreakerConfig } from '../common/circuit-breaker/circuit-breaker.service';
 
 export interface CloudinaryUploadResult {
@@ -15,6 +16,7 @@ export interface CloudinaryUploadResult {
 export class CloudinaryService {
   private readonly logger = new Logger(CloudinaryService.name);
 
+  constructor(private readonly metricsService: MetricsService) {
   private readonly circuitBreakerConfig: CircuitBreakerConfig = {
     name: 'cloudinary-upload',
     failureThreshold: 5,
@@ -56,6 +58,51 @@ export class CloudinaryService {
     } = {},
     _retries: number = 2,
   ): Promise<CloudinaryUploadResult> {
+    const maxAttempts = retries + 1;
+    let lastError: string = '';
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        this.logger.log(
+          `Cloudinary upload attempt ${attempt}/${maxAttempts} for ${publicId}`,
+        );
+
+        const result = await this.performUpload(buffer, publicId, options);
+
+        if (result.error) {
+          lastError = result.error;
+          this.logger.warn(
+            `Cloudinary upload attempt ${attempt}/${maxAttempts} failed for ${publicId}: ${result.error}`,
+          );
+          this.metricsService.incrementCloudinaryUploadErrors();
+
+          if (attempt < maxAttempts) {
+            // Wait before retry with exponential backoff
+            const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+            this.logger.log(`Retrying in ${delayMs}ms...`);
+            await this.delay(delayMs);
+            continue;
+          }
+        } else {
+          // Success
+          this.logger.log(
+            `Clip uploaded successfully on attempt ${attempt}: ${publicId} (${result.secure_url})`,
+          );
+          return result;
+        }
+      } catch (error) {
+        lastError = error.message;
+        this.logger.error(
+          `Cloudinary upload attempt ${attempt}/${maxAttempts} threw error for ${publicId}: ${lastError}`,
+        );
+        this.metricsService.incrementCloudinaryUploadErrors();
+
+        if (attempt < maxAttempts) {
+          const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+          this.logger.log(`Retrying in ${delayMs}ms...`);
+          await this.delay(delayMs);
+          continue;
+        }
     try {
       this.logger.log(`Starting Cloudinary upload for ${publicId}`);
 
@@ -78,6 +125,16 @@ export class CloudinaryService {
         throw error;
       }
 
+    // All attempts failed
+    this.logger.error(
+      `All ${maxAttempts} Cloudinary upload attempts failed for ${publicId}. Last error: ${lastError}`,
+    );
+    this.metricsService.incrementCloudinaryUploadErrors();
+    return {
+      secure_url: '',
+      public_id: publicId,
+      error: lastError || 'Upload failed after all retry attempts',
+    };
       // For other errors, return error result
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(`Cloudinary upload failed for ${publicId}: ${errorMessage}`);

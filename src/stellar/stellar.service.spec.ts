@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { StellarService } from './stellar.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { CircuitBreakerService } from '../common/circuit-breaker/circuit-breaker.service';
 import { ServiceUnavailableException } from '../common/exceptions/service-unavailable.exception';
 
@@ -16,6 +17,10 @@ describe('StellarService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StellarService,
+        {
+          provide: MetricsService,
+          useValue: { incrementStellarRpcErrors: jest.fn() },
+        },
         CircuitBreakerService,
       ],
     }).compile();
@@ -49,6 +54,12 @@ describe('StellarService', () => {
       expect(result.message).toBe('Address is required');
     });
 
+    it('should return valid: false for null input', () => {
+      const result = service.validateAddress(null as unknown as string);
+      expect(result.valid).toBe(false);
+      expect(result.message).toBe('Address is required');
+    });
+
     it('should return valid: false for an invalid format', () => {
       const result = service.validateAddress('invalid-address');
       expect(result.valid).toBe(false);
@@ -65,12 +76,17 @@ describe('StellarService', () => {
     });
 
     it('should return valid: false for an address that is not a public key', () => {
-      // S... is a secret key, not a public key
-      const secretKey = 'S...';
-      // Actually, a real secret key:
       const realSecretKey =
         'SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'; // Not necessarily valid format
       const result = service.validateAddress(realSecretKey);
+      expect(result.valid).toBe(false);
+      expect(result.message).toBe('Invalid Stellar address format');
+    });
+
+    it('should return valid: false for non-ed25519 strings', () => {
+      const result = service.validateAddress(
+        'MZXW6YTBOI======',
+      );
       expect(result.valid).toBe(false);
       expect(result.message).toBe('Invalid Stellar address format');
     });

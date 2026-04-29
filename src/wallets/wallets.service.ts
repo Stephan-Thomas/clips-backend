@@ -6,8 +6,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { StrKey } from '@stellar/stellar-sdk';
 import { ConnectWalletDto } from './dto/connect-wallet.dto';
+import { StellarService } from '../stellar/stellar.service';
 
 export interface DisconnectResult {
   message: string;
@@ -16,7 +16,10 @@ export interface DisconnectResult {
 
 @Injectable()
 export class WalletsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly stellarService: StellarService,
+  ) {}
 
   /**
    * Soft-delete a wallet by setting `deletedAt`.
@@ -68,8 +71,9 @@ export class WalletsService {
    * Validates the Stellar address and upserts the record.
    */
   async connect(userId: number, dto: ConnectWalletDto) {
-    if (!StrKey.isValidEd25519PublicKey(dto.address)) {
-      throw new BadRequestException('Invalid Stellar address');
+    const validation = this.stellarService.validateAddress(dto.address);
+    if (!validation.valid) {
+      throw new BadRequestException('Invalid Stellar address format');
     }
 
     return this.prisma.wallet.upsert({

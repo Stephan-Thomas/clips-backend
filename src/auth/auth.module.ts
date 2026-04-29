@@ -13,6 +13,10 @@ import { DeviceFingerprintService } from './device-fingerprint.service';
 import { BruteForceProtectionService } from './brute-force-protection.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CsrfModule } from '../csrf/csrf.module';
+import { BullModule } from '@nestjs/bullmq';
+import { EMAIL_DELIVERY_QUEUE } from './email-delivery.queue';
+import { EmailDeliveryService } from './email-delivery.service';
+import { EmailDeliveryProcessor } from './email-delivery.processor';
 
 @Module({
   imports: [
@@ -32,6 +36,7 @@ import { CsrfModule } from '../csrf/csrf.module';
       },
     }),
     CsrfModule,
+    BullModule.registerQueue({ name: EMAIL_DELIVERY_QUEUE }),
   ],
   controllers: [AuthController],
   providers: [
@@ -43,6 +48,8 @@ import { CsrfModule } from '../csrf/csrf.module';
     CookieService,
     DeviceFingerprintService,
     BruteForceProtectionService,
+    EmailDeliveryService,
+    EmailDeliveryProcessor,
   ],
 })
 export class AuthModule {}

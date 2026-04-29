@@ -7,6 +7,7 @@ import * as bodyParser from 'body-parser';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AppModule } from './app.module';
+import { MetricsInterceptor } from './metrics/metrics.interceptor';
 import { AppLoggerService } from './logger/logger.service';
 
 async function bootstrap() {
@@ -119,6 +120,8 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  app.useGlobalInterceptors(app.get(MetricsInterceptor));
 
   await app.listen(process.env.PORT ?? 3000);
 }

@@ -120,6 +120,7 @@ REDIS_HOST=localhost
 # Stellar (see section below)
 STELLAR_NETWORK=testnet
 MIN_STELLAR_PAYOUT=5
+METRICS_TOKEN=change-this-in-production
 ```
 
 ## Stellar Network Configuration
@@ -156,6 +157,22 @@ MIN_STELLAR_PAYOUT=5   # default: 5 USD
 ```
 
 ## API Endpoints
+
+### Metrics — `GET /metrics`
+
+Prometheus-compatible metrics are exposed at `/metrics` and protected with `METRICS_TOKEN`.
+
+- Send header: `x-metrics-token: <METRICS_TOKEN>`
+- This route is not guarded by JWT, but returns `403` when token is missing/invalid.
+
+Tracked metrics:
+
+- `clipcash_clips_generated_total{status="success|failure"}`
+- `clipcash_nft_mints_total{status="success|failure"}`
+- `clipcash_job_queue_depth{queue="clip-generation"}`
+- `clipcash_http_request_duration_seconds{method,route,status_code}`
+- `clipcash_stellar_rpc_errors_total`
+- `clipcash_cloudinary_upload_errors_total`
 
 ### Wallets — `GET /wallets`
 
@@ -201,3 +218,19 @@ clips-backend/
 │   └── schema.prisma
 └── .env.example
 ```
+
+## Integration and E2E Tests
+
+Run the subscription integration flow and existing e2e suites with:
+
+```bash
+npm run test:e2e
+```
+
+The subscription integration scenarios live in `test/subscription-flow.e2e-spec.ts` and cover:
+
+- intent creation with memo and destination
+- activation on matching memo+amount
+- rejection on wrong amount
+- idempotency on duplicate transaction id
+- rejection of expired intents (>15 minutes)

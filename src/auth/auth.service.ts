@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
-import { MailService } from './mail.service';
+import { EmailDeliveryService } from './email-delivery.service';
 import {
   DeviceFingerprintService,
   DeviceFingerprint,
@@ -35,7 +35,7 @@ export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
-    private readonly mailService: MailService,
+    private readonly emailDeliveryService: EmailDeliveryService,
     private readonly deviceFingerprintService: DeviceFingerprintService,
     private readonly bruteForceService: BruteForceProtectionService,
   ) {}
@@ -244,8 +244,12 @@ export class AuthService {
       data: { userId: user.id, tokenHash, expiresAt },
     });
 
-    // Send the email
-    await this.mailService.sendVerificationEmail(email, rawToken);
+    void this.emailDeliveryService.enqueue({
+      to: email,
+      subject: 'Verify your email address',
+      template: 'verification',
+      context: { token: rawToken },
+    });
 
     // Issue tokens
     const tokens = await this.issueTokensWithRefresh({
@@ -391,7 +395,12 @@ export class AuthService {
       data: { userId: user.id, tokenHash, expiresAt },
     });
 
-    await this.mailService.sendMagicLink(email, rawToken);
+    void this.emailDeliveryService.enqueue({
+      to: email,
+      subject: 'Your magic login link',
+      template: 'magic-link',
+      context: { token: rawToken },
+    });
   }
 
   async verifyMagicLink(
@@ -460,7 +469,12 @@ export class AuthService {
       data: { userId: user.id, tokenHash, expiresAt },
     });
 
-    await this.mailService.sendPasswordResetLink(email, rawToken);
+    void this.emailDeliveryService.enqueue({
+      to: email,
+      subject: 'Reset your password',
+      template: 'password-reset',
+      context: { token: rawToken },
+    });
   }
 
   async resetPassword(rawToken: string, newPassword: string): Promise<void> {

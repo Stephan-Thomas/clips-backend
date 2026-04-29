@@ -1,7 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { NotFoundException, ConflictException } from '@nestjs/common';
 import { WalletsService } from './wallets.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { StellarService } from '../stellar/stellar.service';
+
+jest.mock('../prisma/prisma.service', () => ({
+  PrismaService: class PrismaService {},
+}));
 
 const mockPrisma = {
   wallet: {
@@ -12,6 +17,10 @@ const mockPrisma = {
   payout: {
     findFirst: jest.fn(),
   },
+};
+
+const mockStellarService = {
+  validateAddress: jest.fn(),
 };
 
 const baseWallet = {
@@ -34,6 +43,7 @@ describe('WalletsService.disconnect', () => {
       providers: [
         WalletsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: StellarService, useValue: mockStellarService },
       ],
     }).compile();
     service = module.get<WalletsService>(WalletsService);
@@ -87,6 +97,7 @@ describe('WalletsService.connect', () => {
       providers: [
         WalletsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: StellarService, useValue: mockStellarService },
       ],
     }).compile();
     service = module.get<WalletsService>(WalletsService);
@@ -97,16 +108,18 @@ describe('WalletsService.connect', () => {
   const realStellarAddress = 'GDH6VVE7RUCV664TYL5ZTP4YTL6H64XG76Z7Z7Z7Z7Z7Z7Z7Z7Z7Z7Z7'; // This is 56 chars
 
   it('throws BadRequestException for invalid Stellar address', async () => {
+    mockStellarService.validateAddress.mockReturnValue({ valid: false });
     await expect(
       service.connect(42, {
         address: 'invalid-address',
         chain: 'stellar',
         type: 'freighter',
       }),
-    ).rejects.toThrow('Invalid Stellar address');
+    ).rejects.toThrow('Invalid Stellar address format');
   });
 
   it('upserts a wallet with valid Stellar address', async () => {
+    mockStellarService.validateAddress.mockReturnValue({ valid: true });
     const dto = {
       address: 'GC6XOTK6L6LGBKIWH3IRUZPVUY4COGEMW4J5YINOSPKO27YKTUUHTZF3',
       chain: 'stellar',

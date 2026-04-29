@@ -23,6 +23,7 @@ import {
   CLIP_JOB_OPTIONS,
 } from './clip-generation.queue';
 import { CloudinaryService } from './cloudinary.service';
+import { MetricsService } from '../metrics/metrics.service';
 
 export type ClipSortField = 'viralityScore' | 'createdAt' | 'duration';
 export type SortOrder = 'asc' | 'desc';
@@ -64,6 +65,7 @@ export class ClipsService {
     private readonly eventEmitter: EventEmitter2,
     private readonly prisma: PrismaService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly metricsService: MetricsService,
   ) {}
 
   /**
@@ -78,7 +80,23 @@ export class ClipsService {
       set.add(String(bullJob.id));
       this.videoJobs.set(job.videoId, set);
     }
+    await this.refreshQueueDepth();
     return { jobId: bullJob.id };
+  }
+
+  async refreshQueueDepth(): Promise<void> {
+    const counts = await this.clipQueue.getJobCounts(
+      'waiting',
+      'active',
+      'delayed',
+      'prioritized',
+    );
+    const depth =
+      (counts.waiting ?? 0) +
+      (counts.active ?? 0) +
+      (counts.delayed ?? 0) +
+      (counts.prioritized ?? 0);
+    this.metricsService.setQueueDepth('clip-generation', depth);
   }
 
   /**

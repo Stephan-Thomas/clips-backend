@@ -14,6 +14,7 @@ import {
 } from './clips.events';
 import { ClipsGateway } from './clips.gateway';
 import { ClipsService } from './clips.service';
+import { MetricsService } from '../metrics/metrics.service';
 
 export interface ClipGenerationJob {
   videoId: string;
@@ -71,6 +72,7 @@ export class ClipGenerationProcessor extends WorkerHost {
     private readonly eventEmitter: EventEmitter2,
     private readonly clipsGateway: ClipsGateway,
     private readonly clipsService: ClipsService,
+    private readonly metricsService: MetricsService,
   ) {
     super();
   }
@@ -100,6 +102,7 @@ export class ClipGenerationProcessor extends WorkerHost {
     );
 
     try {
+      await this.clipsService.refreshQueueDepth();
       // FFmpeg cut — may throw transiently (OOM, network mount, etc.)
       this.logger.log(`Starting clip generation: ${clipId}`);
       await job.updateProgress(10);
@@ -152,6 +155,7 @@ export class ClipGenerationProcessor extends WorkerHost {
             `Keeping local file as fallback: ${data.outputPath}`,
         );
 
+        this.metricsService.incrementClipsGenerated('failure');
         // Return clip with upload_failed status and local file path
         return {
           id: clipId,
@@ -183,6 +187,7 @@ export class ClipGenerationProcessor extends WorkerHost {
         `Clip processing complete: ${clipId} → ${uploadResult.secure_url}`,
       );
       await job.updateProgress(100);
+      this.metricsService.incrementClipsGenerated('success');
 
       return {
         id: clipId,
@@ -204,6 +209,7 @@ export class ClipGenerationProcessor extends WorkerHost {
         updatedAt: new Date(),
       };
     } catch (error) {
+      this.metricsService.incrementClipsGenerated('failure');
       this.logger.error(
         `Clip generation failed for ${clipId}: ${error.message}`,
         error.stack,
@@ -300,6 +306,7 @@ export class ClipGenerationProcessor extends WorkerHost {
       // Intermediate failure — BullMQ will retry with backoff; nothing else to do
       return;
     }
+    void this.clipsService.refreshQueueDepth();
 
     // Final failure — notify the rest of the system
     const payload: ClipGenerationFailedPayload = {
@@ -332,6 +339,7 @@ export class ClipGenerationProcessor extends WorkerHost {
     this.logger.log(
       `Job ${job.id} completed. Updating clip ${clipId} in database.`,
     );
+    await this.clipsService.refreshQueueDepth();
 
     try {
       await this.clipsService.updateClip(clipId, {

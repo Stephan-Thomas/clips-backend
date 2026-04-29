@@ -4,6 +4,10 @@ import { ConfigModule } from '@nestjs/config';
 import { StellarPaymentService } from './stellar-payment.service';
 import { StellarWebhookService } from './stellar-webhook.service';
 import { SubscriptionsController } from './subscriptions.controller';
+import { StellarModule } from '../stellar/stellar.module';
+
+@Module({
+  imports: [PrismaModule, ConfigModule, StellarModule],
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 
 @Module({
