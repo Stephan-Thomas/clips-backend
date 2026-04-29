@@ -76,8 +76,13 @@ export class ClipGenerationProcessor extends WorkerHost {
   }
 
   /** Main job handler — called by BullMQ on each attempt */
-  async process(job: Job<ClipGenerationJob>): Promise<Clip> {
-    const data = job.data;
+  async process(job: Job<ClipGenerationJob | any>): Promise<Clip> {
+    // Handle uploaded video processing job
+    if (job.data.inputPath && !job.data.startTime && !job.data.endTime) {
+      return this.processUploadedVideo(job);
+    }
+
+    const data = job.data as ClipGenerationJob;
     const durationSeconds = data.endTime - data.startTime;
     const clipId = `${data.videoId}-${data.startTime}-${data.endTime}`;
     const JOB_TIMEOUT_MS = 30 * 60 * 1000;
@@ -362,5 +367,76 @@ export class ClipGenerationProcessor extends WorkerHost {
       },
     };
     this.clipsGateway.emitProgressToUser(userId, payload);
+  }
+
+  /**
+   * Process uploaded video - detect viral timestamps and generate clips
+   * This is a special job type triggered by video upload endpoint
+   */
+  private async processUploadedVideo(job: Job<any>): Promise<Clip> {
+    const data = job.data;
+    const videoId = data.videoId;
+    const inputPath = data.inputPath;
+
+    this.logger.log(`Processing uploaded video ${videoId} (job: ${job.id})`);
+
+    try {
+      await job.updateProgress(10);
+
+      // Import VideoService dynamically to detect viral timestamps
+      const { VideoService } = await import('../videos/video.service');
+      const videoService = this.clipsService['videoService'] as VideoService;
+
+      // Detect viral timestamps (will also update video with processing stats)
+      const moments = await videoService.detectViralTimestamps(Number(videoId));
+
+      this.logger.log(
+        `Detected ${moments.length} viral moments for video ${videoId}`,
+      );
+
+      await job.updateProgress(50);
+
+      // Clean up the temporary uploaded file after processing
+      try {
+        await this.cloudinaryService.deleteLocalFile(inputPath);
+        this.logger.log(`Cleaned up uploaded temp file: ${inputPath}`);
+      } catch (cleanupError) {
+        this.logger.warn(`Failed to cleanup temp file ${inputPath}: ${cleanupError.message}`);
+      }
+
+      await job.updateProgress(100);
+
+      // Return placeholder result (actual clips are created separately)
+      return {
+        id: `upload-${videoId}`,
+        videoId: String(videoId),
+        userId: String(data.userId || ''),
+        startTime: 0,
+        endTime: 0,
+        duration: 0,
+        positionRatio: 0,
+        clipUrl: '',
+        status: 'upload_processed',
+        selected: false,
+        postStatus: null,
+        caption: '',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to process uploaded video ${videoId}: ${error.message}`,
+        error.stack,
+      );
+
+      // Clean up temp file on failure
+      try {
+        await this.cloudinaryService.deleteLocalFile(inputPath);
+      } catch {
+        // Ignore cleanup errors
+      }
+
+      throw error;
+    }
   }
 }
