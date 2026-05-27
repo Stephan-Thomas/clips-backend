@@ -53,7 +53,7 @@ export class RoyaltyQueryService {
   async getRoyaltyInfo(mintAddress: string): Promise<RoyaltyInfo> {
     const cacheKey = CacheKeyBuilder.royalty(mintAddress);
 
-    const cached = await this.redisService.get(cacheKey);
+    const cached = await this.redis.get(cacheKey);
     if (cached) {
       this.logger.debug(`Cache hit for royalty:${mintAddress}`);
       return JSON.parse(cached) as RoyaltyInfo;
@@ -61,7 +61,7 @@ export class RoyaltyQueryService {
 
     const result = await this.queryOnChainRoyalty(mintAddress);
 
-    await this.redisService.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(result));
+    await this.redis.setex(cacheKey, CACHE_TTL_SECONDS, JSON.stringify(result));
 
     return result;
   }

@@ -15,6 +15,7 @@ import {
 import { ClipsGateway } from './clips.gateway';
 import { ClipsService } from './clips.service';
 import { MetricsService } from '../metrics/metrics.service';
+import type { VideoService } from '../videos/video.service';
 
 export interface ClipGenerationJob {
   videoId: string;
@@ -392,7 +393,6 @@ export class ClipGenerationProcessor extends WorkerHost {
       await job.updateProgress(10);
 
       // Import VideoService dynamically to detect viral timestamps
-      const { VideoService } = await import('../videos/video.service');
       const videoService = this.clipsService['videoService'] as VideoService;
 
       // Detect viral timestamps (will also update video with processing stats)
@@ -424,10 +424,11 @@ export class ClipGenerationProcessor extends WorkerHost {
         duration: 0,
         positionRatio: 0,
         clipUrl: '',
-        status: 'upload_processed',
+        status: 'upload_processed' as const,
         selected: false,
         postStatus: null,
         caption: '',
+        viralityScore: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       };

@@ -7,27 +7,30 @@ datasource db {
 }
 
 model User {
-  id            Int            @id @default(autoincrement())
-  email         String         @unique
-  password      String?
-  mfaEnabled    Boolean        @default(false)
-  mfaSecret     String?
-  provider      String?
-  providerId    String?
-  name          String?
-  picture       String?
-  emailVerified DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  videos        Video[]
-  userPlatforms UserPlatform[]
-  subscriptions Subscription[]
-  stellarPaymentIntents StellarPaymentIntent[]
-  wallets       Wallet[]
-  payouts       Payout[]
-  magicLinks     MagicLink[]
-  refreshTokens  RefreshToken[]
-  passwordResetTokens PasswordResetToken[]
+  id                     Int            @id @default(autoincrement())
+  email                  String         @unique
+  password               String?
+  mfaEnabled             Boolean        @default(false)
+  mfaSecret              String?
+  provider               String?
+  providerId             String?
+  name                   String?
+  picture                String?
+  emailVerified          DateTime?
+  stellarPublicKey       String?
+  walletType             String?
+  encryptedStellarSecret String?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  videos                 Video[]
+  userPlatforms          UserPlatform[]
+  subscriptions          Subscription[]
+  stellarPaymentIntents  StellarPaymentIntent[]
+  wallets                Wallet[]
+  payouts                Payout[]
+  magicLinks             MagicLink[]
+  refreshTokens          RefreshToken[]
+  passwordResetTokens    PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
 
   @@unique([provider, providerId])

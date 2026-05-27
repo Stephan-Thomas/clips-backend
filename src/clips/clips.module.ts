@@ -10,6 +10,8 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { NftMintService } from './nft-mint.service';
 import { StellarModule } from '../stellar/stellar.module';
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
+import { AyrshareService } from './ayrshare.service';
+import { ClipPublishService } from './clip-publish.service';
 
 @Module({
   imports: [

@@ -12,8 +12,10 @@ import {
   DeviceFingerprint,
 } from './device-fingerprint.service';
 import { BruteForceProtectionService } from './brute-force-protection.service';
+import { EncryptionService } from '../encryption/encryption.service';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { Keypair } from '@stellar/stellar-sdk';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import * as speakeasy from 'speakeasy';
@@ -38,7 +40,21 @@ export class AuthService {
     private readonly emailDeliveryService: EmailDeliveryService,
     private readonly deviceFingerprintService: DeviceFingerprintService,
     private readonly bruteForceService: BruteForceProtectionService,
+    private readonly encryption: EncryptionService,
   ) {}
+
+  /** Generate a custodial Stellar keypair and persist it on the user record. */
+  private async assignStellarWallet(userId: number): Promise<void> {
+    const keypair = Keypair.random();
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        stellarPublicKey: keypair.publicKey(),
+        walletType: 'custodial',
+        encryptedStellarSecret: this.encryption.encrypt(keypair.secret()),
+      },
+    });
+  }
 
   async findOrCreateGoogleUser(params: {
     provider: string;
@@ -75,7 +91,7 @@ export class AuthService {
       }
     }
 
-    return this.prisma.user.create({
+    const newUser = await this.prisma.user.create({
       data: {
         email: email || `google_${providerId}@no-email.google`,
         provider,
@@ -85,6 +101,10 @@ export class AuthService {
         emailVerified: new Date(), // Auto verify oauth
       },
     });
+
+    // Auto-generate custodial Stellar wallet (#168)
+    await this.assignStellarWallet(newUser.id);
+    return newUser;
   }
 
   issueTokens(user: JwtUser) {
@@ -231,6 +251,9 @@ export class AuthService {
         password: hashedPassword,
       },
     });
+
+    // Auto-generate custodial Stellar wallet (#168)
+    await this.assignStellarWallet(user.id);
 
     // Generate Email Verification Token
     const rawToken = crypto.randomBytes(32).toString('hex');

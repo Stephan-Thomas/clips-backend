@@ -27,6 +27,7 @@ import { LoginGuard } from '../auth/guards/login.guard.js';
 import { BulkDeleteClipsDto } from './dto/bulk-delete-clips.dto.js';
 import { PublishClipDto } from './dto/publish-clip.dto.js';
 import { ClipPublishService } from './clip-publish.service.js';
+import type { ClipGenerationJob } from './clip-generation.processor';
 
 @ApiTags('clips')
 @ApiBearerAuth('access-token')

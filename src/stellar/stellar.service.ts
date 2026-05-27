@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StrKey, Horizon } from '@stellar/stellar-sdk';
-import { MetricsService } from '../metrics/metrics.service';
 import { CircuitBreakerService, CircuitBreakerConfig } from '../common/circuit-breaker/circuit-breaker.service';
 
 export type StellarNetwork = 'testnet' | 'public';
@@ -14,16 +13,8 @@ export class StellarService {
   readonly horizonUrl: string;
   readonly networkPassphrase: string;
 
-  constructor(private readonly metricsService: MetricsService) {
   private readonly horizonCircuitBreakerConfig: CircuitBreakerConfig = {
     name: 'stellar-horizon',
-    failureThreshold: 5,
-    recoveryTimeout: 30000,
-    samplingDuration: 60000,
-  };
-
-  private readonly rpcCircuitBreakerConfig: CircuitBreakerConfig = {
-    name: 'stellar-rpc',
     failureThreshold: 5,
     recoveryTimeout: 30000,
     samplingDuration: 60000,
@@ -93,43 +84,6 @@ export class StellarService {
         };
       },
     );
-
-    if (response.status === 404) {
-      return { found: false };
-    }
-
-    if (!response.ok) {
-      const body = await response.text();
-      this.metricsService.incrementStellarRpcErrors();
-      throw new Error(
-        `Horizon lookup failed (${response.status}): ${body.slice(0, 300)}`,
-      );
-    }
-
-    const payload = (await response.json()) as {
-      successful?: boolean;
-      created_at?: string;
-    };
-
-    return {
-      found: true,
-      successful: Boolean(payload.successful),
-      confirmedAt: payload.created_at
-        ? new Date(payload.created_at)
-        : undefined,
-    };
-  }
-
-  async getAccountBalance(address: string): Promise<number> {
-    const server = new Horizon.Server(this.horizonUrl);
-    try {
-      const account = await server.loadAccount(address);
-      const nativeBalance = account.balances.find(
-        (b) => b.asset_type === 'native',
-      );
-      return nativeBalance ? parseFloat(nativeBalance.balance) : 0;
-    } catch (error) {
-      this.metricsService.incrementStellarRpcErrors();
   }
 
   async getAccountBalance(address: string): Promise<number> {
@@ -154,10 +108,6 @@ export class StellarService {
     });
   }
 
-  /**
-   * Validates a Stellar public address format and checksum
-   * @param address Stellar public address (G...)
-   */
   validateAddress(address: string): { valid: boolean; message?: string } {
     if (!address) {
       return { valid: false, message: 'Address is required' };

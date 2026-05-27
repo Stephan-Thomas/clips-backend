@@ -21,10 +21,12 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { CircuitBreakerModule } from './common/circuit-breaker/circuit-breaker.module';
 import { RedisModule } from './redis/redis.module';
 import { EarningsModule } from './earnings/earnings.module';
-import { PayoutsModule } from './payouts/payouts.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { WalletsModule } from './wallets/wallets.module';
-
+import { LoggerModule } from './logger/logger.module';
+import { RequestIdMiddleware } from './logger/request-id.middleware';
+import { UsersModule } from './users/users.module';
+import { TransactionsModule } from './transactions/transactions.module';
 
 @Module({
   imports: [
@@ -103,6 +105,8 @@ import { WalletsModule } from './wallets/wallets.module';
     EarningsModule,
     MetricsModule,
     WalletsModule,
+    UsersModule,
+    TransactionsModule,
   ],
   controllers: [AppController],
   providers: [

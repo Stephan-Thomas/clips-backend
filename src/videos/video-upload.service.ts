@@ -175,11 +175,11 @@ export class VideoUploadService {
           sourceType: 'upload',
           sourceUrl: tempFilePath, // Temporary path, will be updated after Cloudinary upload
           status: 'pending',
-          duration: Math.round(validation.metadata.duration),
+          duration: Math.round(validation.metadata!.duration),
           fileSize: BigInt(stats.size),
           processingStats: {
-            inputQuality: `${validation.metadata.height}p`,
-            durationSec: validation.metadata.duration,
+            inputQuality: `${validation.metadata!.height}p`,
+            durationSec: validation.metadata!.duration,
             uploadStarted: new Date().toISOString(),
           },
         },
@@ -213,7 +213,7 @@ export class VideoUploadService {
       // Estimate processing time (rough heuristic: ~2 min per minute of video)
       const estimatedSeconds = Math.max(
         60,
-        Math.round(validation.metadata.duration * 2),
+        Math.round(validation.metadata!.duration * 2),
       );
 
       return {
