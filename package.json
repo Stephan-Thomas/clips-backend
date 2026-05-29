@@ -106,6 +106,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "transformIgnorePatterns": [
+      "node_modules/(?!(cockatiel)/)"
+    ],
     "moduleNameMapper": {
       "^@prisma/client$": "<rootDir>/__mocks__/@prisma/client.ts"
     },
