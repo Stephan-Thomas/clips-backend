@@ -1,5 +1,6 @@
 import { Controller, Post, Body, Req, UseGuards, ValidationPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TransactionsService } from './transactions.service';
 import { SendTransactionDto } from './dto/send-transaction.dto';
@@ -12,6 +13,7 @@ export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 
   @Post('send')
+  @Throttle({ transactionSend: { limit: 5, ttl: 60000 } })
   @ApiOperation({
     summary: 'Send XLM from the user\'s custodial wallet',
     description: 'Backend builds, signs, and submits the Stellar transaction. Frontend only provides amount + destination.',
