@@ -5,6 +5,8 @@ import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import * as crypto from 'crypto';
 
+jest.mock('@stellar/stellar-sdk', () => require('../../test/mocks/stellar-sdk.mock'));
+
 describe('StellarWebhookService', () => {
   let service: StellarWebhookService;
   let prismaService: PrismaService;

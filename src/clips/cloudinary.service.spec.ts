@@ -82,7 +82,7 @@ describe('CloudinaryService', () => {
       );
 
       // Multiple failures will trigger circuit breaker
-      const results = [];
+      const results: Awaited<ReturnType<typeof service.uploadVideoFromBuffer>>[] = [];
       for (let i = 0; i < 6; i++) {
         const result = await service.uploadVideoFromBuffer(
           mockBuffer,

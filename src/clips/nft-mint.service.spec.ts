@@ -19,7 +19,12 @@ describe('NftMintService uploadMetadataToIPFS', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new NftMintService(prismaMock as any, stellarMock as any);
+    service = new NftMintService(
+      prismaMock as any,
+      stellarMock as any,
+      { incrementNftMints: jest.fn() } as any,
+      { execute: jest.fn((_cfg, fn) => fn()) } as any,
+    );
   });
 
   it('throws NotFoundException when clip does not exist', async () => {

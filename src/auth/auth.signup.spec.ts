@@ -7,6 +7,8 @@ import { JwtService } from '@nestjs/jwt';
 import { MailService } from './mail.service';
 import { DeviceFingerprintService } from './device-fingerprint.service';
 import { BruteForceProtectionService } from './brute-force-protection.service';
+import { EmailDeliveryService } from './email-delivery.service';
+import { EncryptionService } from '../encryption/encryption.service';
 import * as bcrypt from 'bcrypt';
 
 describe('Auth - Password Strength Validation', () => {
@@ -53,6 +55,14 @@ describe('Auth - Password Strength Validation', () => {
         {
           provide: BruteForceProtectionService,
           useValue: { check: jest.fn(), record: jest.fn() },
+        },
+        {
+          provide: EmailDeliveryService,
+          useValue: { queueEmail: jest.fn() },
+        },
+        {
+          provide: EncryptionService,
+          useValue: { encrypt: jest.fn(), decrypt: jest.fn() },
         },
       ],
     }).compile();

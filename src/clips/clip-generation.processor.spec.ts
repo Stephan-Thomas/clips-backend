@@ -72,6 +72,11 @@ function makeProcessor() {
     _isVideoCancelled: jest.fn().mockReturnValue(false),
     _getVideo: jest.fn().mockReturnValue({ userId: 1 }),
     updateClip: jest.fn(),
+    refreshQueueDepth: jest.fn().mockResolvedValue(undefined),
+  };
+  const metricsService = {
+    incrementClipsGenerated: jest.fn(),
+    setQueueDepth: jest.fn(),
   };
   jest.spyOn(emitter, 'emit');
   jest.spyOn(cloudinaryService, 'uploadVideoFromBuffer');
@@ -81,6 +86,7 @@ function makeProcessor() {
     emitter,
     clipsGateway as any,
     clipsService as any,
+    metricsService as any,
   );
   return { processor, emitter, cloudinaryService, clipsService };
 }
