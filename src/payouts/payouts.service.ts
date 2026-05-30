@@ -9,6 +9,7 @@ import {
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarService } from '../stellar/stellar.service';
+import { PayoutReceiptService } from './payout-receipt.service';
 
 @Injectable()
 export class PayoutsService {
@@ -18,6 +19,7 @@ export class PayoutsService {
   constructor(
     private prisma: PrismaService,
     private stellarService: StellarService,
+    private payoutReceiptService: PayoutReceiptService,
   ) {
     this.minPayoutAmount = parseFloat(
       process.env.MIN_STELLAR_PAYOUT ?? '5',
@@ -196,6 +198,18 @@ export class PayoutsService {
       this.logger.log(
         `Payout ${payoutId} completed. Transaction hash: ${submitResult.hash}`,
       );
+
+      void this.payoutReceiptService.generateAndSendReceipt({
+        payoutId: payout.id,
+        amount: payout.amount,
+        currency: payout.currency,
+        method: payout.method,
+        transactionId: transaction.hash().toString('hex'),
+        onChainTxHash: submitResult.hash,
+        confirmedAt: new Date(),
+        recipientEmail: payout.user.email,
+        walletAddress: payout.wallet.address,
+      });
 
       return {
         id: payout.id,
