@@ -9,20 +9,19 @@ import {
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarService } from '../stellar/stellar.service';
+import { PayoutLimitsService } from './payout-limits.service';
 
 @Injectable()
 export class PayoutsService {
   private readonly logger = new Logger(PayoutsService.name);
-  private readonly minPayoutAmount: number;
+  private readonly defaultPayoutCurrency =
+    process.env.DEFAULT_PAYOUT_CURRENCY ?? 'USD';
 
   constructor(
     private prisma: PrismaService,
     private stellarService: StellarService,
-  ) {
-    this.minPayoutAmount = parseFloat(
-      process.env.MIN_STELLAR_PAYOUT ?? '5',
-    );
-  }
+    private payoutLimitsService: PayoutLimitsService,
+  ) {}
 
   async requestPayout(userId: number): Promise<{
     id: number;
@@ -63,23 +62,23 @@ export class PayoutsService {
       _sum: { amount: true },
     });
 
-    const pendingBalance =
+    const availableBalance =
       (totalEarnings._sum.amount ?? 0) -
       (totalPaidOut._sum.amount ?? 0);
 
-    if (pendingBalance < this.minPayoutAmount) {
-      throw new BadRequestException(
-        `Minimum payout amount is $${this.minPayoutAmount}. Your pending balance is $${pendingBalance.toFixed(2)}.`,
-      );
-    }
+    const currency = this.defaultPayoutCurrency;
+    const payoutAmount = this.payoutLimitsService.resolvePayoutAmount(
+      availableBalance,
+      currency,
+    );
 
     // Create payout record
     const payout = await this.prisma.payout.create({
       data: {
         userId,
         walletId: wallet.id,
-        amount: pendingBalance,
-        currency: 'USD',
+        amount: payoutAmount,
+        currency,
         method: 'stellar',
         status: 'pending',
       },
