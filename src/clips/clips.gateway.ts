@@ -28,10 +28,6 @@ import { WS_CLIP_PROGRESS, WS_CLIP_COMPLETED, WS_CLIP_FAILED } from './clips.eve
  * so each user only receives events for their own jobs.
  *
  * Client-side connection example:
- *   const socket = io('/clips', { auth: { token: '<jwt>' } });
- *   socket.on('clip.progress',   (payload) => { ... });
- *   socket.on('clip.completed',  (payload) => { ... });
- *   socket.on('clip.failed',     (payload) => { ... });
  */
 @WebSocketGateway({
   namespace: '/clips',
