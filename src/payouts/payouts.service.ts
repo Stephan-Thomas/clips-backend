@@ -230,4 +230,52 @@ export class PayoutsService {
       );
     }
   }
+
+  async approvePayout(payoutId: number): Promise<{ id: number; status: string; approvedAt: Date }> {
+    const payout = await this.prisma.payout.findUnique({ where: { id: payoutId } });
+    if (!payout) throw new NotFoundException('Payout not found');
+    if (payout.status !== 'pending') {
+      throw new BadRequestException(`Cannot approve payout in '${payout.status}' status`);
+    }
+
+    const updated = await this.prisma.payout.update({
+      where: { id: payoutId },
+      data: { status: 'approved', approvedAt: new Date() },
+    });
+
+    this.logger.log(`Payout ${payoutId} approved by admin`);
+    return { id: updated.id, status: updated.status, approvedAt: updated.approvedAt! };
+  }
+
+  async rejectPayout(
+    payoutId: number,
+    reason?: string,
+  ): Promise<{ id: number; status: string; rejectedAt: Date; rejectionReason: string | null }> {
+    const payout = await this.prisma.payout.findUnique({ where: { id: payoutId } });
+    if (!payout) throw new NotFoundException('Payout not found');
+    if (!['pending', 'approved'].includes(payout.status)) {
+      throw new BadRequestException(`Cannot reject payout in '${payout.status}' status`);
+    }
+
+    const updated = await this.prisma.payout.update({
+      where: { id: payoutId },
+      data: { status: 'rejected', rejectedAt: new Date(), rejectionReason: reason ?? null },
+    });
+
+    this.logger.log(`Payout ${payoutId} rejected by admin. Reason: ${reason ?? 'none'}`);
+    return {
+      id: updated.id,
+      status: updated.status,
+      rejectedAt: updated.rejectedAt!,
+      rejectionReason: updated.rejectionReason,
+    };
+  }
+
+  async listPendingPayouts(): Promise<Array<{ id: number; userId: number; amount: number; currency: string; status: string; createdAt: Date }>> {
+    return this.prisma.payout.findMany({
+      where: { status: { in: ['pending', 'approved'] } },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, userId: true, amount: true, currency: true, status: true, createdAt: true },
+    });
+  }
 }
