@@ -50,10 +50,12 @@ export interface ClipProcessingResult {
  * BullMQ processor for clip-generation jobs.
  *
  * Retry configuration (set per-job in ClipsService.enqueueClip via CLIP_JOB_OPTIONS):
- *   attempts : 3   — 1 initial attempt + 2 automatic retries
- *   backoff  : exponential, starting at 1 000 ms
- *              attempt 2 → ~1 000 ms wait
- *              attempt 3 → ~2 000 ms wait
+ *   attempts : 5   — 1 initial attempt + 4 automatic retries
+ *   backoff  : exponential, starting at 2 000 ms
+ *              attempt 2 → ~2 000 ms wait
+ *              attempt 3 → ~4 000 ms wait
+ *              attempt 4 → ~8 000 ms wait
+ *              attempt 5 → ~16 000 ms wait
  *
  * After FFmpeg cuts a clip, uploads to Cloudinary for reliable CDN delivery:
  *   1. Uploads video buffer using upload_stream
@@ -61,7 +63,7 @@ export interface ClipProcessingResult {
  *   3. Deletes local temporary file after success
  *   4. Handles errors with BullMQ retries (exponential backoff)
  *
- * After all 3 attempts fail, BullMQ moves the job to the failed set and
+ * After all 5 attempts fail, BullMQ moves the job to the failed set and
  * fires the 'failed' worker event, handled by @OnWorkerEvent('failed') below.
  */
 @Processor(CLIP_GENERATION_QUEUE)
@@ -295,21 +297,38 @@ export class ClipGenerationProcessor extends WorkerHost {
    */
   @OnWorkerEvent('failed')
   onFailed(job: Job<ClipGenerationJob>, error: Error): void {
-    const isFinalAttempt = job.attemptsMade >= (job.opts.attempts ?? 1);
-
-    this.logger.error(
-      `Clip job ${job.id} failed — ` +
-        `attempt ${job.attemptsMade}/${job.opts.attempts ?? 1} — ` +
-        `reason: ${error.message}`,
-    );
+    const maxAttempts = job.opts.attempts ?? 1;
+    const isFinalAttempt = job.attemptsMade >= maxAttempts;
 
     if (!isFinalAttempt) {
-      // Intermediate failure — BullMQ will retry with backoff; nothing else to do
+      // Intermediate failure — compute the next backoff delay for the log message
+      const backoffDelay = job.opts.backoff
+        ? typeof job.opts.backoff === 'number'
+          ? job.opts.backoff
+          : // exponential: delay * 2^(attemptsMade - 1)
+            (job.opts.backoff.delay ?? 2000) *
+            Math.pow(2, job.attemptsMade - 1)
+        : 0;
+
+      this.logger.warn(
+        `[RETRY] Clip job ${job.id} failed on attempt ${job.attemptsMade}/${maxAttempts} — ` +
+          `videoId=${job.data.videoId} — ` +
+          `reason: ${error.message} — ` +
+          `retrying in ~${Math.round(backoffDelay / 1000)}s`,
+      );
       return;
     }
+
+    // Final failure — log and notify the rest of the system
+    this.logger.error(
+      `[FINAL FAILURE] Clip job ${job.id} exhausted all ${maxAttempts} attempts — ` +
+        `videoId=${job.data.videoId} — ` +
+        `reason: ${error.message}`,
+      error.stack,
+    );
+
     void this.clipsService.refreshQueueDepth();
 
-    // Final failure — notify the rest of the system
     const payload: ClipGenerationFailedPayload = {
       jobId: job.id,
       videoId: job.data.videoId,
