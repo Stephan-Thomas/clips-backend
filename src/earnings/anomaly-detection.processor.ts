@@ -2,6 +2,7 @@ import { Processor, Process } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { AnomalyDetectionService } from './anomaly-detection.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { ANOMALY_DETECTION_QUEUE } from './anomaly-detection.queue';
 import { MailService } from '../auth/mail.service';
 
@@ -16,6 +17,7 @@ export class AnomalyDetectionProcessor {
   constructor(
     private anomalyDetectionService: AnomalyDetectionService,
     private mailService: MailService,
+    private metricsService: MetricsService,
   ) {}
 
   @Process('detect-anomaly')
@@ -23,6 +25,9 @@ export class AnomalyDetectionProcessor {
     const { earningId } = job.data;
 
     this.logger.log(`Processing anomaly detection for earning ${earningId}`);
+
+    const jobMetricId = `${ANOMALY_DETECTION_QUEUE}:${job.id}`;
+    this.metricsService.recordJobStart(jobMetricId);
 
     try {
       const result = await this.anomalyDetectionService.detectAnomalies(
@@ -32,11 +37,15 @@ export class AnomalyDetectionProcessor {
       if (result.isAnomaly && result.severity === 'high') {
         await this.notifyAdmins(result);
       }
+
+      this.metricsService.recordJobCompletion(jobMetricId, ANOMALY_DETECTION_QUEUE, 'success');
     } catch (error) {
       this.logger.error(
         `Anomaly detection failed for earning ${earningId}:`,
         error,
       );
+      this.metricsService.recordJobCompletion(jobMetricId, ANOMALY_DETECTION_QUEUE, 'failure');
+      this.metricsService.recordJobFailure(ANOMALY_DETECTION_QUEUE, error instanceof Error ? error.message : String(error));
       throw error;
     }
   }

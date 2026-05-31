@@ -123,6 +123,10 @@ export class ClipGenerationProcessor extends WorkerHost {
         `videoId=${data.videoId}`,
     );
 
+    // Record job start for metrics tracking
+    const jobMetricId = `${CLIP_GENERATION_QUEUE}:${job.id}`;
+    this.metricsService.recordJobStart(jobMetricId);
+
     try {
       await this.clipsService.refreshQueueDepth();
 
@@ -215,6 +219,7 @@ export class ClipGenerationProcessor extends WorkerHost {
       // ── Step 4: done ─────────────────────────────────────────────────────
       await job.updateProgress({ percent: PROGRESS.DONE, step: 'done' });
       this.metricsService.incrementClipsGenerated('success');
+      this.metricsService.recordJobCompletion(jobMetricId, CLIP_GENERATION_QUEUE, 'success');
 
       clearTimeout(timeout);
       this.clipsService._clearJobController(String(job.id ?? ''));
@@ -240,6 +245,8 @@ export class ClipGenerationProcessor extends WorkerHost {
       };
     } catch (error) {
       this.metricsService.incrementClipsGenerated('failure');
+      this.metricsService.recordJobCompletion(jobMetricId, CLIP_GENERATION_QUEUE, 'failure');
+      this.metricsService.recordJobFailure(CLIP_GENERATION_QUEUE, error.message);
       this.logger.error(
         `Clip generation failed for ${clipId}: ${error.message}`,
         error.stack,
@@ -348,6 +355,10 @@ export class ClipGenerationProcessor extends WorkerHost {
     }
 
     // Final failure — log and notify the rest of the system
+    // Record final failure for metrics
+    const jobMetricId = `${CLIP_GENERATION_QUEUE}:${job.id}`;
+    this.metricsService.recordJobFailure(CLIP_GENERATION_QUEUE, 'final_failure');
+
     this.logger.error(
       `[FINAL FAILURE] Clip job ${job.id} exhausted all ${maxAttempts} attempts — ` +
         `videoId=${job.data.videoId} — ` +

@@ -4,6 +4,7 @@ import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { AyrshareService } from './ayrshare.service';
 import { UserPlatformService } from '../user-platform/user-platform.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { CLIP_POSTING_QUEUE, type ClipPostingJob } from './clip-posting.queue';
 
 /**
@@ -33,6 +34,7 @@ export class ClipPostingProcessor extends WorkerHost {
     private readonly prisma: PrismaService,
     private readonly ayrshare: AyrshareService,
     private readonly userPlatformService: UserPlatformService,
+    private readonly metricsService: MetricsService,
   ) {
     super();
   }
@@ -49,69 +51,81 @@ export class ClipPostingProcessor extends WorkerHost {
         `clipId=${clipId} platforms=[${platforms.join(', ')}]`,
     );
 
-    // Resolve which of the requested platforms the user still has connected
-    // (a user might disconnect a platform between enqueue and execution)
-    const connectedPlatforms = await this.userPlatformService.findAll(userId);
-    const connectedNames = new Set(connectedPlatforms.map((p) => p.platform));
-    const validPlatforms = platforms.filter((p) => connectedNames.has(p));
+    const jobMetricId = `${CLIP_POSTING_QUEUE}:${job.id}`;
+    this.metricsService.recordJobStart(jobMetricId);
 
-    if (validPlatforms.length === 0) {
-      this.logger.warn(
-        `[posting] job ${job.id} — no connected platforms for user ${userId}; skipping`,
+    try {
+      // Resolve which of the requested platforms the user still has connected
+      // (a user might disconnect a platform between enqueue and execution)
+      const connectedPlatforms = await this.userPlatformService.findAll(userId);
+      const connectedNames = new Set(connectedPlatforms.map((p) => p.platform));
+      const validPlatforms = platforms.filter((p) => connectedNames.has(p));
+
+      if (validPlatforms.length === 0) {
+        this.logger.warn(
+          `[posting] job ${job.id} — no connected platforms for user ${userId}; skipping`,
+        );
+        this.metricsService.recordJobCompletion(jobMetricId, CLIP_POSTING_QUEUE, 'success');
+        return;
+      }
+
+      await job.updateProgress(10);
+
+      const results = await this.ayrshare.post(mediaUrl, caption, validPlatforms);
+
+      await job.updateProgress(80);
+
+      const failedPlatforms: string[] = [];
+
+      await Promise.all(
+        results.map(async (r) => {
+          await this.prisma.clipPost.updateMany({
+            where: { clipId, platform: r.platform },
+            data: {
+              status: r.success ? 'published' : 'failed',
+              postId: r.postId ?? null,
+              error: r.error ?? null,
+              attempts: (job.attemptsMade ?? 0) + 1,
+            },
+          });
+
+          if (r.success) {
+            this.logger.log(
+              `[posting] clipId=${clipId} published to ${r.platform} (job ${job.id})`,
+            );
+          } else {
+            failedPlatforms.push(r.platform);
+            this.logger.warn(
+              `[posting] clipId=${clipId} failed on ${r.platform}: ${r.error}`,
+            );
+          }
+        }),
       );
-      return;
-    }
 
-    await job.updateProgress(10);
+      await job.updateProgress(100);
 
-    const results = await this.ayrshare.post(mediaUrl, caption, validPlatforms);
-
-    await job.updateProgress(80);
-
-    const failedPlatforms: string[] = [];
-
-    await Promise.all(
-      results.map(async (r) => {
-        await this.prisma.clipPost.updateMany({
-          where: { clipId, platform: r.platform },
-          data: {
-            status: r.success ? 'published' : 'failed',
-            postId: r.postId ?? null,
-            error: r.error ?? null,
-            attempts: (job.attemptsMade ?? 0) + 1,
-          },
-        });
-
-        if (r.success) {
-          this.logger.log(
-            `[posting] clipId=${clipId} published to ${r.platform} (job ${job.id})`,
-          );
-        } else {
-          failedPlatforms.push(r.platform);
-          this.logger.warn(
-            `[posting] clipId=${clipId} failed on ${r.platform}: ${r.error}`,
+      // If any platforms failed and we have retries left, throw so BullMQ retries
+      // the whole job (the next attempt will only retry the platforms that failed,
+      // since successfully posted platforms keep their 'published' status in the DB).
+      if (failedPlatforms.length > 0) {
+        const remainingAttempts =
+          (job.opts.attempts ?? 1) - (job.attemptsMade + 1);
+        if (remainingAttempts > 0) {
+          // Re-enqueue only the failed platforms via job data mutation isn't possible;
+          // instead we throw so BullMQ retries. The next run re-checks DB-stored
+          // status to avoid re-posting already published platforms.
+          throw new Error(
+            `Posting failed for platforms: [${failedPlatforms.join(', ')}]. ` +
+              `Will retry (${remainingAttempts} attempt(s) left).`,
           );
         }
-      }),
-    );
-
-    await job.updateProgress(100);
-
-    // If any platforms failed and we have retries left, throw so BullMQ retries
-    // the whole job (the next attempt will only retry the platforms that failed,
-    // since successfully posted platforms keep their 'published' status in the DB).
-    if (failedPlatforms.length > 0) {
-      const remainingAttempts =
-        (job.opts.attempts ?? 1) - (job.attemptsMade + 1);
-      if (remainingAttempts > 0) {
-        // Re-enqueue only the failed platforms via job data mutation isn't possible;
-        // instead we throw so BullMQ retries. The next run re-checks DB-stored
-        // status to avoid re-posting already published platforms.
-        throw new Error(
-          `Posting failed for platforms: [${failedPlatforms.join(', ')}]. ` +
-            `Will retry (${remainingAttempts} attempt(s) left).`,
-        );
       }
+
+      this.metricsService.recordJobCompletion(jobMetricId, CLIP_POSTING_QUEUE, 'success');
+    } catch (error) {
+      this.metricsService.recordJobCompletion(jobMetricId, CLIP_POSTING_QUEUE, 'failure');
+      this.metricsService.recordJobFailure(CLIP_POSTING_QUEUE, error instanceof Error ? error.message : String(error));
+      throw error;
     }
   }
 
@@ -124,6 +138,7 @@ export class ClipPostingProcessor extends WorkerHost {
         `[posting] job ${job.id} exhausted all attempts — ` +
           `clipId=${job.data.clipId} reason: ${error.message}`,
       );
+      this.metricsService.recordJobFailure(CLIP_POSTING_QUEUE, 'final_failure');
     } else {
       this.logger.warn(
         `[posting] job ${job.id} will be retried — ` +

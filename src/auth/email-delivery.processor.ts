@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { MailService } from './mail.service';
+import { MetricsService } from '../metrics/metrics.service';
 import {
   EMAIL_DELIVERY_QUEUE,
   EmailDeliveryJobData,
@@ -11,7 +12,10 @@ import {
 export class EmailDeliveryProcessor extends WorkerHost {
   private readonly logger = new Logger(EmailDeliveryProcessor.name);
 
-  constructor(private readonly mailService: MailService) {
+  constructor(
+    private readonly mailService: MailService,
+    private readonly metricsService: MetricsService,
+  ) {
     super();
   }
 
@@ -20,7 +24,18 @@ export class EmailDeliveryProcessor extends WorkerHost {
       `Processing email job ${job.id} — attempt ${job.attemptsMade + 1}/${job.opts.attempts ?? 1} ` +
         `to=${job.data.to} template=${job.data.template}`,
     );
-    await this.mailService.sendTemplatedEmail(job.data);
+
+    const jobMetricId = `${EMAIL_DELIVERY_QUEUE}:${job.id}`;
+    this.metricsService.recordJobStart(jobMetricId);
+
+    try {
+      await this.mailService.sendTemplatedEmail(job.data);
+      this.metricsService.recordJobCompletion(jobMetricId, EMAIL_DELIVERY_QUEUE, 'success');
+    } catch (error) {
+      this.metricsService.recordJobCompletion(jobMetricId, EMAIL_DELIVERY_QUEUE, 'failure');
+      this.metricsService.recordJobFailure(EMAIL_DELIVERY_QUEUE, error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }
 
   @OnWorkerEvent('failed')
@@ -53,5 +68,6 @@ export class EmailDeliveryProcessor extends WorkerHost {
         `reason: ${error.message}`,
       error.stack,
     );
+    this.metricsService.recordJobFailure(EMAIL_DELIVERY_QUEUE, 'final_failure');
   }
 }
