@@ -122,6 +122,33 @@ async function bootstrap() {
   );
 
   app.useGlobalInterceptors(app.get(MetricsInterceptor));
+  // Enable Nest's shutdown hooks so providers can clean up on signals
+  app.enableShutdownHooks();
+
+  // Listen for OS signals and perform a graceful shutdown that waits for
+  // in-flight work to finish (e.g. BullMQ processors should finish jobs).
+  const shutdown = async (signal: string) => {
+    logger.log(`Received ${signal}, shutting down gracefully...`);
+    const timeoutMs = Number(process.env.GRACEFUL_SHUTDOWN_TIMEOUT_MS) || 30000;
+    const forceExit = setTimeout(() => {
+      logger.error(`Shutdown timed out after ${timeoutMs}ms — forcing exit.`);
+      process.exit(1);
+    }, timeoutMs);
+
+    try {
+      await app.close();
+      logger.log('Application closed cleanly. Exiting.');
+      clearTimeout(forceExit);
+      process.exit(0);
+    } catch (err) {
+      logger.error('Error during application shutdown', err as any);
+      clearTimeout(forceExit);
+      process.exit(1);
+    }
+  };
+
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
 
   await app.listen(process.env.PORT ?? 3000);
 }
