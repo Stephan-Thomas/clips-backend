@@ -1,13 +1,18 @@
 import {
+  BadRequestException,
   Controller,
   UseGuards,
   Get,
+  Delete,
   Query,
+  Param,
   Req,
+  Res,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../auth/decorators/public.decorator';
 import { EarningsService } from './earnings.service';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 
 interface RequestWithUser extends Request {
   user: { userId: number };
@@ -17,6 +22,31 @@ interface RequestWithUser extends Request {
 @Controller('earnings')
 export class EarningsController {
   constructor(private readonly earningsService: EarningsService) {}
+
+  @Get('export')
+  async exportEarnings(
+    @Req() req: RequestWithUser,
+    @Res() res: Response,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('format') format = 'csv',
+  ) {
+    if (format !== 'csv') {
+      throw new BadRequestException('Only format=csv is supported');
+    }
+
+    const { filename, content } = await this.earningsService.exportEarningsCsv(
+      req.user.userId,
+      { startDate, endDate },
+    );
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"`,
+    );
+    res.send(content);
+  }
 
   @Get()
   async getEarnings(
@@ -32,5 +62,23 @@ export class EarningsController {
       pageNum,
       limitNum,
     );
+  }
+
+  @Delete(':id')
+  async deleteEarning(
+    @Req() req: RequestWithUser,
+    @Param('id') id: string,
+  ) {
+    return this.earningsService.softDelete(
+      parseInt(id, 10),
+      req.user.userId,
+    );
+  }
+
+  @Public()
+  @Get('leaderboard')
+  async getLeaderboard(@Query('limit') limit = '10') {
+    const limitNum = Math.min(parseInt(limit, 10) || 10, 100);
+    return this.earningsService.getLeaderboard(limitNum);
   }
 }

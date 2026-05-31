@@ -64,4 +64,48 @@ export class RedisService {
       return false;
     }
   }
+
+  /**
+   * Retrieves Redis memory statistics via the INFO memory command.
+   * Returns key memory fields in a structured format.
+   */
+  async getMemoryInfo(): Promise<{
+    usedMemoryBytes: number;
+    maxMemoryBytes: number;
+    usedMemoryHuman: string;
+    maxMemoryHuman: string;
+    usedMemoryRssBytes: number;
+    memFragmentationRatio: number;
+    usagePercent: number | null;
+  }> {
+    const raw = await this.redis.info('memory');
+
+    const parse = (key: string): string => {
+      const match = raw.match(new RegExp(`^${key}:(.+)$`, 'm'));
+      return match ? match[1].trim() : '0';
+    };
+
+    const usedMemoryBytes = parseInt(parse('used_memory'), 10);
+    const maxMemoryBytes = parseInt(parse('maxmemory'), 10);
+    const usedMemoryHuman = parse('used_memory_human');
+    const maxMemoryHuman = parse('maxmemory_human');
+    const usedMemoryRssBytes = parseInt(parse('used_memory_rss'), 10);
+    const memFragmentationRatio = parseFloat(parse('mem_fragmentation_ratio'));
+
+    // maxmemory == 0 means "no limit" — usage percentage is indeterminate
+    const usagePercent =
+      maxMemoryBytes > 0
+        ? Math.round((usedMemoryBytes / maxMemoryBytes) * 100 * 100) / 100
+        : null;
+
+    return {
+      usedMemoryBytes,
+      maxMemoryBytes,
+      usedMemoryHuman,
+      maxMemoryHuman,
+      usedMemoryRssBytes,
+      memFragmentationRatio,
+      usagePercent,
+    };
+  }
 }

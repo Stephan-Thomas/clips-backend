@@ -6,7 +6,11 @@
   "transformIgnorePatterns": [
     "node_modules/(?!(cockatiel)/)"
   ],
+  "testRegex": ".e2e-spec.ts$|.integration-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^cockatiel$": "<rootDir>/__mocks__/cockatiel.js"
   }
 }
