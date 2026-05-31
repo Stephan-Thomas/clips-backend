@@ -18,6 +18,7 @@ import { EMAIL_DELIVERY_QUEUE } from './email-delivery.queue';
 import { EmailDeliveryService } from './email-delivery.service';
 import { EmailDeliveryProcessor } from './email-delivery.processor';
 import { EncryptionModule } from '../encryption/encryption.module';
+import { AdminGuard } from './guards/admin.guard';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { EncryptionModule } from '../encryption/encryption.module';
     BruteForceProtectionService,
     EmailDeliveryService,
     EmailDeliveryProcessor,
+    AdminGuard,
   ],
 })
 export class AuthModule {}

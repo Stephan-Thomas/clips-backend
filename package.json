@@ -31,6 +31,7 @@
     "@nestjs/passport": "^11.0.3",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/platform-socket.io": "^11.0.1",
+    "@nestjs/schedule": "^6.1.3",
     "@nestjs/swagger": "^8.0.0",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^11.0.1",
@@ -107,6 +108,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "transformIgnorePatterns": [
+      "node_modules/(?!(cockatiel)/)"
+    ],
     "moduleNameMapper": {
       "^@prisma/client$": "<rootDir>/__mocks__/@prisma/client.ts"
     },

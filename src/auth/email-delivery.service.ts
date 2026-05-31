@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import {
   EMAIL_DELIVERY_JOB,
   EMAIL_DELIVERY_QUEUE,
+  EMAIL_JOB_OPTIONS,
   EmailDeliveryJobData,
 } from './email-delivery.queue';
 
@@ -17,15 +18,7 @@ export class EmailDeliveryService {
   ) {}
 
   async enqueue(data: EmailDeliveryJobData): Promise<void> {
-    await this.queue.add(EMAIL_DELIVERY_JOB, data, {
-      attempts: 5,
-      backoff: {
-        type: 'exponential',
-        delay: 1000,
-      },
-      removeOnComplete: true,
-      removeOnFail: false,
-    });
+    await this.queue.add(EMAIL_DELIVERY_JOB, data, EMAIL_JOB_OPTIONS);
     this.logger.log(`Queued email delivery for ${data.to} (${data.template})`);
   }
 }
