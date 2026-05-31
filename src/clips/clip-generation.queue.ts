@@ -4,19 +4,22 @@ export const CLIP_GENERATION_QUEUE = 'clip-generation';
 /**
  * Default job options applied to every clip-generation job.
  *
- * Retry strategy:
- *   - Up to 3 attempts total (1 initial + 2 retries)
- *   - Exponential backoff starting at 1 000 ms
+ * Retry strategy (transient failures: network, FFmpeg OOM, Cloudinary rate-limits):
+ *   - 5 attempts total (1 initial + 4 automatic retries)
+ *   - Exponential backoff starting at 2 000 ms
  *     attempt 1 → immediate
- *     attempt 2 → ~1 000 ms delay
- *     attempt 3 → ~2 000 ms delay
+ *     attempt 2 → ~2 000 ms delay
+ *     attempt 3 → ~4 000 ms delay
+ *     attempt 4 → ~8 000 ms delay
+ *     attempt 5 → ~16 000 ms delay
  *   - After all attempts are exhausted BullMQ moves the job to the
  *     failed set, which triggers the @OnWorkerEvent('failed') handler.
  */
 export const CLIP_JOB_OPTIONS = {
-  attempts: 3,
+  attempts: 5,
   backoff: {
     type: 'exponential' as const,
-    delay: 1000,
+    /** Base delay in ms — doubles on every retry */
+    delay: 2000,
   },
 } as const;

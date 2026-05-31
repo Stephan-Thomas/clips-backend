@@ -76,7 +76,6 @@ function makeProcessor() {
   };
   const metricsService = {
     incrementClipsGenerated: jest.fn(),
-    setQueueDepth: jest.fn(),
   };
   jest.spyOn(emitter, 'emit');
   jest.spyOn(cloudinaryService, 'uploadVideoFromBuffer');

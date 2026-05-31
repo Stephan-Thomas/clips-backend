@@ -13,6 +13,15 @@ describe('NftMintService uploadMetadataToIPFS', () => {
     networkPassphrase: 'Test SDF Network ; September 2015',
     rpcUrl: 'https://soroban-testnet.stellar.org',
     network: 'testnet',
+    validateAddress: jest.fn().mockReturnValue({ valid: true }),
+  };
+
+  const metricsMock = {
+    incrementNftMints: jest.fn(),
+  };
+
+  const circuitBreakerMock = {
+    execute: jest.fn().mockImplementation((_config, fn) => fn()),
   };
 
   let service: NftMintService;
@@ -22,8 +31,8 @@ describe('NftMintService uploadMetadataToIPFS', () => {
     service = new NftMintService(
       prismaMock as any,
       stellarMock as any,
-      { incrementNftMints: jest.fn() } as any,
-      { execute: jest.fn((_cfg, fn) => fn()) } as any,
+      metricsMock as any,
+      circuitBreakerMock as any,
     );
   });
 

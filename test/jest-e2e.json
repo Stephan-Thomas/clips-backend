@@ -6,10 +6,7 @@
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
   },
-  "transformIgnorePatterns": [
-    "node_modules/(?!(cockatiel)/)"
-  ],
   "moduleNameMapper": {
-    "^(\\.{1,2}/.*)\\.js$": "$1"
+    "^cockatiel$": "<rootDir>/__mocks__/cockatiel.js"
   }
 }
