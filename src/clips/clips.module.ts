@@ -6,6 +6,8 @@ import { ClipsService } from './clips.service';
 import { ClipGenerationProcessor } from './clip-generation.processor';
 import { CloudinaryService } from './cloudinary.service';
 import { CLIP_GENERATION_QUEUE } from './clip-generation.queue';
+import { NFT_MINT_QUEUE } from './nft-mint.queue';
+import { NftMintProcessor } from './nft-mint.processor';
 import { CLIP_POSTING_QUEUE } from './clip-posting.queue';
 import { ClipPostingProcessor } from './clip-posting.processor';
 import { ClipsGateway } from './clips.gateway';
@@ -15,6 +17,8 @@ import { StellarModule } from '../stellar/stellar.module';
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
 import { AyrshareService } from './ayrshare.service';
 import { ClipPublishService } from './clip-publish.service';
+import { RedisModule } from '../redis/redis.module';
+import { QueueRateLimitGuard } from '../common/guards/queue-rate-limit.guard';
 import { UserPlatformModule } from '../user-platform/user-platform.module';
 
 @Module({
@@ -25,6 +29,11 @@ import { UserPlatformModule } from '../user-platform/user-platform.module';
      * Configured via the @Processor decorator on ClipGenerationProcessor.
      */
     BullModule.registerQueue({ name: CLIP_GENERATION_QUEUE }),
+    BullModule.registerQueue({ name: NFT_MINT_QUEUE }),
+    PrismaModule,
+    StellarModule,
+    CircuitBreakerModule,
+    RedisModule,
 
     /**
      * Posting queue — I/O-bound (Ayrshare HTTP calls, DB updates).
@@ -48,6 +57,7 @@ import { UserPlatformModule } from '../user-platform/user-platform.module';
     ClipsService,
     // Heavy video-processing worker (concurrency: 1 — default)
     ClipGenerationProcessor,
+    NftMintProcessor,
     // Lightweight posting worker (concurrency: 10 — set in @Processor decorator)
     ClipPostingProcessor,
     CloudinaryService,
@@ -55,6 +65,7 @@ import { UserPlatformModule } from '../user-platform/user-platform.module';
     NftMintService,
     AyrshareService,
     ClipPublishService,
+    QueueRateLimitGuard,
   ],
   exports: [
     ClipsService,
