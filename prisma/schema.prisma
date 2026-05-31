@@ -20,6 +20,7 @@ model User {
   stellarPublicKey       String?
   walletType             String?
   encryptedStellarSecret String?
+  role                   String         @default("user")
   createdAt              DateTime       @default(now())
   updatedAt              DateTime       @updatedAt
   videos                 Video[]
@@ -105,15 +106,17 @@ model ClipPost {
 }
 
 model Earning {
-  id        Int       @id @default(autoincrement())
-  clipId    Int
-  amount    Float
-  currency  String    @default("USD")
-  date      DateTime
-  source    String?
-  createdAt DateTime  @default(now())
-  deletedAt DateTime?
-  clip      Clip      @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  id              Int       @id @default(autoincrement())
+  clipId          Int
+  amount          Float
+  currency        String    @default("USD")
+  date            DateTime
+  source          String?
+  isAnomaly       Boolean   @default(false)
+  anomalyReason   String?
+  createdAt       DateTime  @default(now())
+  deletedAt       DateTime?
+  clip            Clip      @relation(fields: [clipId], references: [id], onDelete: Cascade)
 }
 
 model UserPlatform {
@@ -157,6 +160,9 @@ model Payout {
   onChainTxHash String?
   confirmedAt   DateTime?
   paidAt        DateTime?
+  feeAmount     Float?
+  feePercentage Float?
+  finalAmount   Float?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -255,4 +261,46 @@ model StellarWebhookLog {
 
   @@index([transactionId])
   @@index([processedAt])
+}
+
+model PayoutFeeConfig {
+  id              Int      @id @default(autoincrement())
+  method          String   @unique
+  feePercentage   Float
+  fixedFee        Float    @default(0)
+  minFee          Float    @default(0)
+  maxFee          Float?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PlatformWebhookLog {
+  id          Int      @id @default(autoincrement())
+  platform    String
+  eventType   String
+  payload     String
+  signature   String?
+  isValid     Boolean  @default(false)
+  processedAt DateTime @default(now())
+  error       String?
+
+  @@index([platform])
+  @@index([processedAt])
+}
+
+model AnomalyAlert {
+  id          Int      @id @default(autoincrement())
+  earningId   Int
+  userId      Int
+  amount      Float
+  reason      String
+  severity    String
+  isResolved  Boolean  @default(false)
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([isResolved])
+  @@index([createdAt])
 }

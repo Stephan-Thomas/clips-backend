@@ -10,6 +10,7 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarService } from '../stellar/stellar.service';
 import { PayoutReceiptService } from './payout-receipt.service';
+import { FeeService } from './fee.service';
 
 @Injectable()
 export class PayoutsService {
@@ -20,10 +21,9 @@ export class PayoutsService {
     private prisma: PrismaService,
     private stellarService: StellarService,
     private payoutReceiptService: PayoutReceiptService,
+    private feeService: FeeService,
   ) {
-    this.minPayoutAmount = parseFloat(
-      process.env.MIN_STELLAR_PAYOUT ?? '5',
-    );
+    this.minPayoutAmount = parseFloat(process.env.MIN_STELLAR_PAYOUT ?? '5');
   }
 
   async requestPayout(userId: number): Promise<{
@@ -31,6 +31,8 @@ export class PayoutsService {
     amount: number;
     status: string;
     createdAt: Date;
+    feeAmount?: number;
+    finalAmount?: number;
   }> {
     // Check for existing pending payout
     const existingPending = await this.prisma.payout.findFirst({
@@ -66,8 +68,7 @@ export class PayoutsService {
     });
 
     const pendingBalance =
-      (totalEarnings._sum.amount ?? 0) -
-      (totalPaidOut._sum.amount ?? 0);
+      (totalEarnings._sum.amount ?? 0) - (totalPaidOut._sum.amount ?? 0);
 
     if (pendingBalance < this.minPayoutAmount) {
       throw new BadRequestException(
@@ -75,7 +76,13 @@ export class PayoutsService {
       );
     }
 
-    // Create payout record
+    // Calculate fees
+    const feeCalculation = await this.feeService.calculateFee(
+      pendingBalance,
+      'stellar',
+    );
+
+    // Create payout record with fee information
     const payout = await this.prisma.payout.create({
       data: {
         userId,
@@ -84,6 +91,9 @@ export class PayoutsService {
         currency: 'USD',
         method: 'stellar',
         status: 'pending',
+        feeAmount: feeCalculation.feeAmount,
+        feePercentage: feeCalculation.feePercentage,
+        finalAmount: feeCalculation.finalAmount,
       },
     });
 
@@ -92,6 +102,8 @@ export class PayoutsService {
       amount: payout.amount,
       status: payout.status,
       createdAt: payout.createdAt,
+      feeAmount: payout.feeAmount,
+      finalAmount: payout.finalAmount,
     };
   }
 
@@ -163,9 +175,7 @@ export class PayoutsService {
     );
 
     try {
-      const sourceAccount = await server.loadAccount(
-        sourceKeyPair.publicKey(),
-      );
+      const sourceAccount = await server.loadAccount(sourceKeyPair.publicKey());
 
       const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
         fee: StellarSdk.BASE_FEE,
@@ -229,5 +239,115 @@ export class PayoutsService {
         'Failed to process Stellar payout',
       );
     }
+  }
+
+  async batchProcessPayouts(payoutIds: number[]): Promise<{
+    processed: number;
+    failed: number;
+    results: Array<{ id: number; status: string; error?: string }>;
+  }> {
+    const results: Array<{ id: number; status: string; error?: string }> = [];
+    let processed = 0;
+    let failed = 0;
+
+    for (const payoutId of payoutIds) {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          const payout = await tx.payout.findUnique({
+            where: { id: payoutId },
+            include: { wallet: true, user: true },
+          });
+
+          if (!payout) {
+            throw new NotFoundException('Payout record not found');
+          }
+
+          if (payout.status !== 'pending') {
+            throw new BadRequestException(
+              `Payout is already in ${payout.status} status`,
+            );
+          }
+
+          if (!payout.wallet) {
+            throw new BadRequestException(
+              'No wallet associated with this payout',
+            );
+          }
+
+          const platformSecret = process.env.STELLAR_PLATFORM_SECRET;
+          if (!platformSecret) {
+            throw new InternalServerErrorException(
+              'STELLAR_PLATFORM_SECRET environment variable is not set',
+            );
+          }
+
+          const sourceKeyPair = StellarSdk.Keypair.fromSecret(platformSecret);
+          const server = new StellarSdk.Horizon.Server(
+            this.stellarService.horizonUrl,
+          );
+
+          const sourceAccount = await server.loadAccount(
+            sourceKeyPair.publicKey(),
+          );
+
+          const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+            fee: StellarSdk.BASE_FEE,
+            networkPassphrase: this.stellarService.networkPassphrase,
+          })
+            .addOperation(
+              StellarSdk.Operation.payment({
+                destination: payout.wallet.address,
+                asset: StellarSdk.Asset.native(),
+                amount: payout.amount.toString(),
+              }),
+            )
+            .setTimeout(60)
+            .build();
+
+          transaction.sign(sourceKeyPair);
+
+          const submitResult = await server.submitTransaction(transaction);
+
+          await tx.payout.update({
+            where: { id: payoutId },
+            data: {
+              status: 'completed',
+              transactionId: transaction.hash().toString('hex'),
+              onChainTxHash: submitResult.hash,
+              confirmedAt: new Date(),
+            },
+          });
+
+          this.logger.log(
+            `Payout ${payoutId} completed in batch. Transaction hash: ${submitResult.hash}`,
+          );
+
+          void this.payoutReceiptService.generateAndSendReceipt({
+            payoutId: payout.id,
+            amount: payout.amount,
+            currency: payout.currency,
+            method: payout.method,
+            transactionId: transaction.hash().toString('hex'),
+            onChainTxHash: submitResult.hash,
+            confirmedAt: new Date(),
+            recipientEmail: payout.user.email,
+            walletAddress: payout.wallet.address,
+          });
+        });
+
+        results.push({ id: payoutId, status: 'completed' });
+        processed++;
+      } catch (error) {
+        this.logger.error(`Batch payout failed for ${payoutId}:`, error);
+        results.push({
+          id: payoutId,
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        failed++;
+      }
+    }
+
+    return { processed, failed, results };
   }
 }
