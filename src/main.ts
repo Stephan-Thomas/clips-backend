@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
@@ -9,11 +10,30 @@ import * as path from 'path';
 import { AppModule } from './app.module';
 import { MetricsInterceptor } from './metrics/metrics.interceptor';
 import { AppLoggerService } from './logger/logger.service';
+import {
+  getBullMQWorkerConfig,
+  validateWorkerConfig,
+} from './config/bullmq.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const logger = new Logger('Bootstrap');
   const isProduction = process.env.NODE_ENV === 'production';
+
+  // Validate BullMQ worker configuration on startup
+  const configService = app.get(ConfigService);
+  const workerConfig = getBullMQWorkerConfig(configService);
+  try {
+    validateWorkerConfig(workerConfig);
+    logger.log(
+      `BullMQ worker configuration validated: ` +
+        `clip-generation=${workerConfig.clipGenerationConcurrency}, ` +
+        `email-delivery=${workerConfig.emailDeliveryConcurrency}`,
+    );
+  } catch (error) {
+    logger.error(`Invalid BullMQ worker configuration: ${error.message}`);
+    process.exit(1);
+  }
 
   // Swagger setup - only available in non-production environments
   const swaggerConfig = new DocumentBuilder()

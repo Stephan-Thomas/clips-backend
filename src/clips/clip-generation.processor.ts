@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { ConfigService } from '@nestjs/config';
 import { Job, UnrecoverableError } from 'bullmq';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Clip } from './clip.entity';
@@ -15,6 +16,7 @@ import {
 import { ClipsGateway } from './clips.gateway';
 import { ClipsService } from './clips.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { getBullMQWorkerConfig } from '../config/bullmq.config';
 import type { VideoService } from '../videos/video.service';
 
 export interface ClipGenerationJob {
@@ -49,6 +51,9 @@ export interface ClipProcessingResult {
 /**
  * BullMQ processor for clip-generation jobs.
  *
+ * Worker concurrency is controlled by BULLMQ_CLIP_GENERATION_CONCURRENCY env var.
+ * Default: 2 concurrent jobs (video processing is CPU-intensive)
+ *
  * Retry configuration (set per-job in ClipsService.enqueueClip via CLIP_JOB_OPTIONS):
  *   attempts : 3   — 1 initial attempt + 2 automatic retries
  *   backoff  : exponential, starting at 1 000 ms
@@ -64,7 +69,9 @@ export interface ClipProcessingResult {
  * After all 3 attempts fail, BullMQ moves the job to the failed set and
  * fires the 'failed' worker event, handled by @OnWorkerEvent('failed') below.
  */
-@Processor(CLIP_GENERATION_QUEUE)
+@Processor(CLIP_GENERATION_QUEUE, {
+  concurrency: getBullMQWorkerConfig(new ConfigService()).clipGenerationConcurrency,
+})
 export class ClipGenerationProcessor extends WorkerHost {
   private readonly logger = new Logger(ClipGenerationProcessor.name);
 
@@ -74,8 +81,13 @@ export class ClipGenerationProcessor extends WorkerHost {
     private readonly clipsGateway: ClipsGateway,
     private readonly clipsService: ClipsService,
     private readonly metricsService: MetricsService,
+    private readonly configService: ConfigService,
   ) {
     super();
+    const config = getBullMQWorkerConfig(configService);
+    this.logger.log(
+      `Clip generation worker initialized with concurrency: ${config.clipGenerationConcurrency}`,
+    );
   }
 
   /** Main job handler — called by BullMQ on each attempt */

@@ -117,11 +117,17 @@ Copy `.env.example` to `.env` and fill in the values. Key variables:
 DATABASE_URL=postgresql://...
 REDIS_HOST=localhost
 
+# BullMQ Worker Scaling (see BULLMQ_WORKER_SCALING.md for details)
+BULLMQ_CLIP_GENERATION_CONCURRENCY=2
+BULLMQ_EMAIL_DELIVERY_CONCURRENCY=5
+
 # Stellar (see section below)
 STELLAR_NETWORK=testnet
 MIN_STELLAR_PAYOUT=5
 METRICS_TOKEN=change-this-in-production
 ```
+
+For detailed guidance on configuring BullMQ worker concurrency for different environments, see [BULLMQ_WORKER_SCALING.md](./BULLMQ_WORKER_SCALING.md).
 
 ## Stellar Network Configuration
 
