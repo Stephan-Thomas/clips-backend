@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
+import { JwtModule } from '@nestjs/jwt';
 import { ClipsController } from './clips.controller';
 import { ClipsService } from './clips.service';
 import { ClipGenerationProcessor } from './clip-generation.processor';
@@ -19,6 +20,11 @@ import { ClipPublishService } from './clip-publish.service';
     PrismaModule,
     StellarModule,
     CircuitBreakerModule,
+    // JwtModule used by ClipsGateway to verify WebSocket handshake tokens
+    JwtModule.register({
+      secret: process.env.JWT_SECRET ?? 'dev_jwt_secret',
+      signOptions: { expiresIn: '7d' },
+    }),
   ],
   controllers: [ClipsController],
   providers: [

@@ -11,10 +11,12 @@ import { CLIP_GENERATION_QUEUE } from './clip-generation.queue';
 import {
   CLIP_GENERATION_FAILED_EVENT,
   ClipGenerationFailedPayload,
+  ClipProgressStep,
 } from './clips.events';
 import { ClipsGateway } from './clips.gateway';
 import { ClipsService } from './clips.service';
 import { MetricsService } from '../metrics/metrics.service';
+import { PrismaService } from '../prisma/prisma.service';
 import type { VideoService } from '../videos/video.service';
 
 export interface ClipGenerationJob {
@@ -46,6 +48,15 @@ export interface ClipProcessingResult {
   error?: string;
 }
 
+// ── Progress percent constants ────────────────────────────────────────────────
+const PROGRESS = {
+  VIDEO_DOWNLOAD: 10,
+  AI_ANALYSIS: 30,
+  FFMPEG_CUT: 60,
+  UPLOAD: 80,
+  DONE: 100,
+} as const;
+
 /**
  * BullMQ processor for clip-generation jobs.
  *
@@ -63,6 +74,13 @@ export interface ClipProcessingResult {
  *
  * After all 3 attempts fail, BullMQ moves the job to the failed set and
  * fires the 'failed' worker event, handled by @OnWorkerEvent('failed') below.
+ *
+ * Progress WebSocket events are emitted at each key step:
+ *   10%  → video_download  (source accessible)
+ *   30%  → ai_analysis     (viral moments detected — upload-type jobs only)
+ *   60%  → ffmpeg_cut      (clip file written)
+ *   80%  → upload          (Cloudinary upload started)
+ *  100%  → done            (DB updated, all done)
  */
 @Processor(CLIP_GENERATION_QUEUE)
 export class ClipGenerationProcessor extends WorkerHost {
@@ -74,6 +92,7 @@ export class ClipGenerationProcessor extends WorkerHost {
     private readonly clipsGateway: ClipsGateway,
     private readonly clipsService: ClipsService,
     private readonly metricsService: MetricsService,
+    private readonly prisma: PrismaService,
   ) {
     super();
   }
@@ -104,9 +123,12 @@ export class ClipGenerationProcessor extends WorkerHost {
 
     try {
       await this.clipsService.refreshQueueDepth();
-      // FFmpeg cut — may throw transiently (OOM, network mount, etc.)
+
+      // ── Step 1: video_download ───────────────────────────────────────────
       this.logger.log(`Starting clip generation: ${clipId}`);
-      await job.updateProgress(10);
+      await job.updateProgress({ percent: PROGRESS.VIDEO_DOWNLOAD, step: 'video_download' });
+
+      // ── Step 2: ffmpeg_cut ───────────────────────────────────────────────
       await cutClip({
         inputPath: data.inputPath,
         outputPath: data.outputPath,
@@ -115,7 +137,7 @@ export class ClipGenerationProcessor extends WorkerHost {
         videoDuration: data.videoDuration,
         signal: controller.signal,
       });
-      await job.updateProgress(50);
+      await job.updateProgress({ percent: PROGRESS.FFMPEG_CUT, step: 'ffmpeg_cut' });
 
       const metadata = await getVideoMetadata(data.outputPath);
       const actualDuration = Math.round(metadata.duration);
@@ -135,8 +157,8 @@ export class ClipGenerationProcessor extends WorkerHost {
           `viralityScore=${viralityScore}`,
       );
 
-      // Upload to Cloudinary with 2 retries
-      await job.updateProgress(80);
+      // ── Step 3: upload ───────────────────────────────────────────────────
+      await job.updateProgress({ percent: PROGRESS.UPLOAD, step: 'upload' });
       const abortPromise = new Promise<never>((_, reject) => {
         controller.signal.addEventListener(
           'abort',
@@ -187,8 +209,13 @@ export class ClipGenerationProcessor extends WorkerHost {
       this.logger.log(
         `Clip processing complete: ${clipId} → ${uploadResult.secure_url}`,
       );
-      await job.updateProgress(100);
+
+      // ── Step 4: done ─────────────────────────────────────────────────────
+      await job.updateProgress({ percent: PROGRESS.DONE, step: 'done' });
       this.metricsService.incrementClipsGenerated('success');
+
+      clearTimeout(timeout);
+      this.clipsService._clearJobController(String(job.id ?? ''));
 
       return {
         id: clipId,
@@ -289,6 +316,7 @@ export class ClipGenerationProcessor extends WorkerHost {
    *  2. Emit CLIP_GENERATION_FAILED_EVENT so listeners can:
    *     - Set Video.status = 'failed' and Video.processingError = failedReason
    *     - Trigger a user notification (email / push — future work)
+   *  3. Emit clip.failed WebSocket event to the affected user
    *
    * NOTE: this handler fires only on the FINAL failure, not on intermediate
    * retries. Intermediate failures are handled silently by BullMQ's backoff.
@@ -318,6 +346,17 @@ export class ClipGenerationProcessor extends WorkerHost {
     };
 
     this.eventEmitter.emit(CLIP_GENERATION_FAILED_EVENT, payload);
+
+    // Emit WebSocket event to the affected user (fire-and-forget)
+    void this.resolveUserId(job.data.videoId).then((userId) => {
+      if (!userId) return;
+      this.clipsGateway.emitFailed(userId, {
+        jobId: job.id,
+        videoId: job.data.videoId,
+        reason: job.failedReason ?? error.message,
+        attemptsMade: job.attemptsMade,
+      });
+    });
   }
 
   /**
@@ -325,7 +364,7 @@ export class ClipGenerationProcessor extends WorkerHost {
    *
    * Responsibilities:
    *  1. Update the Clip record in Prisma with new URLs and status='success'
-   *  2. Clean up local files (already handled in process() but good to be sure)
+   *  2. Emit clip.completed WebSocket event to the affected user
    */
   @OnWorkerEvent('completed')
   async onCompleted(job: Job<ClipGenerationJob>, result: Clip): Promise<void> {
@@ -334,48 +373,128 @@ export class ClipGenerationProcessor extends WorkerHost {
       this.logger.debug(
         `Job ${job.id} completed but no clipId provided for database update`,
       );
-      return;
+    } else {
+      this.logger.log(
+        `Job ${job.id} completed. Updating clip ${clipId} in database.`,
+      );
+      await this.clipsService.refreshQueueDepth();
+
+      try {
+        await this.clipsService.updateClip(clipId, {
+          clipUrl: result.clipUrl,
+          thumbnail: result.thumbnail,
+          status: result.status,
+          duration: result.duration,
+          error: result.error,
+          localFilePath: result.localFilePath,
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to update clip ${clipId} after successful generation: ${error.message}`,
+        );
+      }
     }
 
-    this.logger.log(
-      `Job ${job.id} completed. Updating clip ${clipId} in database.`,
-    );
-    await this.clipsService.refreshQueueDepth();
-
-    try {
-      await this.clipsService.updateClip(clipId, {
+    // Emit clip.completed WebSocket event to the user
+    const userId = await this.resolveUserId(job.data.videoId);
+    if (userId) {
+      this.clipsGateway.emitCompleted(userId, {
+        jobId: job.id,
+        videoId: job.data.videoId,
+        clipId: clipId,
         clipUrl: result.clipUrl,
         thumbnail: result.thumbnail,
-        status: result.status,
-        duration: result.duration,
-        error: result.error,
-        localFilePath: result.localFilePath,
+        status: result.status ?? 'success',
       });
-    } catch (error) {
-      this.logger.error(
-        `Failed to update clip ${clipId} after successful generation: ${error.message}`,
-      );
     }
   }
 
+  /**
+   * Called by BullMQ on every job.updateProgress() call.
+   * Resolves the userId via in-memory map first, then Prisma as fallback,
+   * then emits the typed progress event over WebSocket.
+   */
   @OnWorkerEvent('progress')
-  onProgress(job: Job<ClipGenerationJob>, progress: number): void {
-    const video = this.clipsService._getVideo(job.data.videoId);
-    const userId = video?.userId;
-    if (!userId) return;
+  onProgress(job: Job<ClipGenerationJob>, progress: number | object): void {
+    const rawPercent =
+      typeof progress === 'object' && progress !== null
+        ? (progress as any).percent
+        : progress;
+    const step: ClipProgressStep =
+      typeof progress === 'object' && progress !== null
+        ? ((progress as any).step ?? 'ffmpeg_cut')
+        : this.stepFromPercent(Number(rawPercent));
+
+    const percent = Math.max(0, Math.min(100, Math.round(Number(rawPercent) || 0)));
+
     const clipId = `${job.data.videoId}-${job.data.startTime}-${job.data.endTime}`;
-    const payload = {
+
+    // Try in-memory map first, then fall back to Prisma asynchronously
+    const video = this.clipsService._getVideo(job.data.videoId);
+    if (video?.userId) {
+      this.emitProgressEvent(String(video.userId), job, percent, step, clipId);
+    } else {
+      // Resolve userId from Prisma and emit asynchronously
+      void this.resolveUserId(job.data.videoId).then((userId) => {
+        if (!userId) return;
+        this.emitProgressEvent(userId, job, percent, step, clipId);
+      });
+    }
+  }
+
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  private emitProgressEvent(
+    userId: string,
+    job: Job<ClipGenerationJob>,
+    percent: number,
+    step: ClipProgressStep,
+    clipId: string,
+  ): void {
+    const isUploadJob = !job.data.startTime && !job.data.endTime;
+    this.clipsGateway.emitProgress(userId, {
       jobId: job.id,
       videoId: job.data.videoId,
-      percent: Math.max(0, Math.min(100, Math.round(Number(progress) || 0))),
-      currentClip: {
-        id: clipId,
-        startTime: job.data.startTime,
-        endTime: job.data.endTime,
-        positionRatio: job.data.positionRatio,
-      },
-    };
-    this.clipsGateway.emitProgressToUser(userId, payload);
+      percent,
+      step,
+      ...(!isUploadJob && {
+        currentClip: {
+          id: clipId,
+          startTime: job.data.startTime,
+          endTime: job.data.endTime,
+          positionRatio: job.data.positionRatio,
+        },
+      }),
+    });
+  }
+
+  /**
+   * Resolves the userId for a given videoId.
+   * Checks the in-memory store first (fast path) then falls back to a
+   * Prisma query (for jobs where the video was never cached in memory).
+   */
+  private async resolveUserId(videoId: string): Promise<string | null> {
+    const video = this.clipsService._getVideo(videoId);
+    if (video?.userId) return String(video.userId);
+
+    try {
+      const dbVideo = await this.prisma.video.findUnique({
+        where: { id: Number(videoId) },
+        select: { userId: true },
+      });
+      return dbVideo?.userId ? String(dbVideo.userId) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Infer a step label from a legacy bare-number progress value */
+  private stepFromPercent(percent: number): ClipProgressStep {
+    if (percent <= 10) return 'video_download';
+    if (percent <= 30) return 'ai_analysis';
+    if (percent <= 60) return 'ffmpeg_cut';
+    if (percent <= 90) return 'upload';
+    return 'done';
   }
 
   /**
@@ -390,10 +509,14 @@ export class ClipGenerationProcessor extends WorkerHost {
     this.logger.log(`Processing uploaded video ${videoId} (job: ${job.id})`);
 
     try {
-      await job.updateProgress(10);
+      // ── Step 1: video_download ─────────────────────────────────────────
+      await job.updateProgress({ percent: PROGRESS.VIDEO_DOWNLOAD, step: 'video_download' });
 
       // Import VideoService dynamically to detect viral timestamps
       const videoService = this.clipsService['videoService'] as VideoService;
+
+      // ── Step 2: ai_analysis ────────────────────────────────────────────
+      await job.updateProgress({ percent: PROGRESS.AI_ANALYSIS, step: 'ai_analysis' });
 
       // Detect viral timestamps (will also update video with processing stats)
       const moments = await videoService.detectViralTimestamps(Number(videoId));
@@ -402,8 +525,7 @@ export class ClipGenerationProcessor extends WorkerHost {
         `Detected ${moments.length} viral moments for video ${videoId}`,
       );
 
-      await job.updateProgress(50);
-
+      // ── Step 3: done (cleanup) ─────────────────────────────────────────
       // Clean up the temporary uploaded file after processing
       try {
         await this.cloudinaryService.deleteLocalFile(inputPath);
@@ -412,7 +534,7 @@ export class ClipGenerationProcessor extends WorkerHost {
         this.logger.warn(`Failed to cleanup temp file ${inputPath}: ${cleanupError.message}`);
       }
 
-      await job.updateProgress(100);
+      await job.updateProgress({ percent: PROGRESS.DONE, step: 'done' });
 
       // Return placeholder result (actual clips are created separately)
       return {
