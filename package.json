@@ -112,12 +112,21 @@
       "node_modules/(?!(cockatiel)/)"
     ],
     "moduleNameMapper": {
-      "^@prisma/client$": "<rootDir>/__mocks__/@prisma/client.ts"
+      "^@prisma/client$": "<rootDir>/__mocks__/@prisma/client.ts",
+      "^cockatiel$": "<rootDir>/__mocks__/cockatiel.ts"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
+    "coverageThreshold": {
+      "global": {
+        "lines": 70,
+        "functions": 70,
+        "branches": 70,
+        "statements": 70
+      }
+    },
     "testEnvironment": "node"
   }
 }
