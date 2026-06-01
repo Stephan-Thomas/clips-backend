@@ -11,6 +11,7 @@ import { EmailDeliveryService } from './email-delivery.service';
 import { DeviceFingerprintService } from './device-fingerprint.service';
 import { BruteForceProtectionService } from './brute-force-protection.service';
 import { EncryptionService } from '../encryption/encryption.service';
+import { StellarService } from '../stellar/stellar.service';
 
 jest.mock('@stellar/stellar-sdk', () => require('../../test/mocks/stellar-sdk.mock'));
 
@@ -51,6 +52,11 @@ const mockBruteForce = {
 
 const mockEncryption = { encrypt: jest.fn().mockReturnValue('encrypted-secret') };
 
+const mockStellarService = {
+  isTestnet: jest.fn().mockReturnValue(false),
+  fundWithFriendbot: jest.fn().mockResolvedValue(undefined),
+};
+
 async function buildService(): Promise<AuthService> {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
@@ -61,6 +67,7 @@ async function buildService(): Promise<AuthService> {
       { provide: DeviceFingerprintService, useValue: mockDeviceFingerprint },
       { provide: BruteForceProtectionService, useValue: mockBruteForce },
       { provide: EncryptionService, useValue: mockEncryption },
+      { provide: StellarService, useValue: mockStellarService },
     ],
   }).compile();
   return module.get<AuthService>(AuthService);
