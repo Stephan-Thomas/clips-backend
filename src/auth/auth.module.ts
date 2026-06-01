@@ -18,6 +18,7 @@ import { EMAIL_DELIVERY_QUEUE } from './email-delivery.queue';
 import { EmailDeliveryService } from './email-delivery.service';
 import { EmailDeliveryProcessor } from './email-delivery.processor';
 import { EncryptionModule } from '../encryption/encryption.module';
+import { StellarModule } from '../stellar/stellar.module';
 import { AdminGuard } from './guards/admin.guard';
 
 @Module({
@@ -25,6 +26,7 @@ import { AdminGuard } from './guards/admin.guard';
     ConfigModule,
     PrismaModule,
     EncryptionModule,
+    StellarModule,
     PassportModule.register({ session: false }),
     JwtModule.registerAsync({
       useFactory: () => {

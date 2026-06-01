@@ -3,6 +3,7 @@ import {
   BadRequestException,
   NotFoundException,
   UnauthorizedException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -20,6 +21,7 @@ import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import * as speakeasy from 'speakeasy';
 import * as QRCode from 'qrcode';
+import { StellarService } from '../stellar/stellar.service';
 
 type JwtUser = {
   id: number;
@@ -34,6 +36,8 @@ const REFRESH_TOKEN_EXPIRES_DAYS =
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
@@ -41,19 +45,31 @@ export class AuthService {
     private readonly deviceFingerprintService: DeviceFingerprintService,
     private readonly bruteForceService: BruteForceProtectionService,
     private readonly encryption: EncryptionService,
+    private readonly stellarService: StellarService,
   ) {}
 
   /** Generate a custodial Stellar keypair and persist it on the user record. */
   private async assignStellarWallet(userId: number): Promise<void> {
     const keypair = Keypair.random();
+    const publicKey = keypair.publicKey();
     await this.prisma.user.update({
       where: { id: userId },
       data: {
-        stellarPublicKey: keypair.publicKey(),
+        stellarPublicKey: publicKey,
         walletType: 'custodial',
         encryptedStellarSecret: this.encryption.encrypt(keypair.secret()),
       },
     });
+
+    if (this.stellarService.isTestnet()) {
+      try {
+        await this.stellarService.fundWithFriendbot(publicKey);
+      } catch (error) {
+        this.logger.error(
+          `Friendbot automated funding failed for user ${userId} and wallet ${publicKey}: ${error.message}`,
+        );
+      }
+    }
   }
 
   async findOrCreateGoogleUser(params: {
