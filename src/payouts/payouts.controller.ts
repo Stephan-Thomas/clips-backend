@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Query,
+  Body,
   UseGuards,
   Req,
   ParseIntPipe,
@@ -11,6 +12,7 @@ import {
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PayoutsService } from './payouts.service';
+import { RequestPayoutDto } from './dto/request-payout.dto';
 import { Request } from 'express';
 
 interface RequestWithUser extends Request {
@@ -25,11 +27,20 @@ export class PayoutsController {
   constructor(private readonly payoutsService: PayoutsService) {}
 
   @Post('request')
-  @ApiOperation({ summary: 'Request a payout for earned balance' })
-  @ApiResponse({ status: 201, description: 'Payout requested' })
-  @ApiResponse({ status: 400, description: 'Pending payout already exists or insufficient balance' })
-  async requestPayout(@Req() req: RequestWithUser) {
-    return this.payoutsService.requestPayout(req.user.userId);
+  @ApiOperation({ summary: 'Request a payout with specified amount and method' })
+  @ApiResponse({ status: 201, description: 'Payout request created' })
+  @ApiResponse({ status: 400, description: 'Invalid request or insufficient balance' })
+  @ApiResponse({ status: 409, description: 'Pending payout already exists' })
+  async requestPayout(
+    @Req() req: RequestWithUser,
+    @Body() dto: RequestPayoutDto,
+  ) {
+    return this.payoutsService.requestPayoutWithDetails(
+      req.user.userId,
+      dto.amount,
+      dto.currency,
+      dto.method,
+    );
   }
 
   @Get()

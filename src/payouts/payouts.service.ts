@@ -42,7 +42,6 @@ export class PayoutsService {
     feeAmount?: number;
     finalAmount?: number;
   }> {
-    // Check for existing pending payout
     const existingPending = await this.prisma.payout.findFirst({
       where: { userId, status: 'pending' },
     });
@@ -53,7 +52,6 @@ export class PayoutsService {
       );
     }
 
-    // Get user's wallet
     const wallet = await this.prisma.wallet.findFirst({
       where: { userId, deletedAt: null },
     });
@@ -64,10 +62,9 @@ export class PayoutsService {
       );
     }
 
-    // Calculate balance and create payout atomically to prevent double-spend
     const currency = this.defaultPayoutCurrency;
 
-    const payout = await this.prisma.withTransaction(async (tx) => {
+    const payout = await this.prisma.$transaction(async (tx) => {
       const totalEarnings = await tx.earning.aggregate({
         where: { clip: { video: { userId } }, deletedAt: null },
         _sum: { amount: true },
@@ -83,7 +80,6 @@ export class PayoutsService {
 
       const fee = await this.feeService.calculateFee(availableBalance, 'stellar');
 
-      // Create payout record with fee information
       return tx.payout.create({
         data: {
           userId,
@@ -102,6 +98,117 @@ export class PayoutsService {
     return {
       id: payout.id,
       amount: payout.amount,
+      status: payout.status,
+      createdAt: payout.createdAt,
+      feeAmount: payout.feeAmount,
+      finalAmount: payout.finalAmount,
+    };
+  }
+
+  async requestPayoutWithDetails(
+    userId: number,
+    amount: number,
+    currency: string,
+    method: 'fiat' | 'stellar',
+  ): Promise<{
+    id: number;
+    amount: number;
+    currency: string;
+    method: string;
+    status: string;
+    createdAt: Date;
+    feeAmount?: number;
+    finalAmount?: number;
+  }> {
+    const existingPending = await this.prisma.payout.findFirst({
+      where: { userId, status: 'pending' },
+    });
+
+    if (existingPending) {
+      throw new ConflictException(
+        'A payout request is already pending for this user',
+      );
+    }
+
+    const minThreshold = parseFloat(process.env.MIN_PAYOUT_AMOUNT ?? '10');
+    if (amount < minThreshold) {
+      throw new BadRequestException(
+        `Minimum payout amount is ${minThreshold} ${currency}`,
+      );
+    }
+
+    const totalEarnings = await this.prisma.earning.aggregate({
+      where: { clip: { video: { userId } }, deletedAt: null },
+      _sum: { amount: true },
+    });
+
+    const totalPaidOut = await this.prisma.payout.aggregate({
+      where: { userId, status: { in: ['completed', 'processing'] } },
+      _sum: { amount: true },
+    });
+
+    const availableBalance =
+      (totalEarnings._sum.amount ?? 0) - (totalPaidOut._sum.amount ?? 0);
+
+    if (amount > availableBalance) {
+      throw new BadRequestException(
+        `Insufficient balance. Available: ${availableBalance} ${currency}`,
+      );
+    }
+
+    let walletId: number | null = null;
+    let payoutMethodId: number | null = null;
+
+    if (method === 'stellar') {
+      const wallet = await this.prisma.wallet.findFirst({
+        where: { userId, deletedAt: null },
+      });
+
+      if (!wallet) {
+        throw new BadRequestException(
+          'No active Stellar wallet found. Please connect a wallet first.',
+        );
+      }
+      walletId = wallet.id;
+    } else if (method === 'fiat') {
+      const payoutMethod = await this.prisma.payoutMethod.findFirst({
+        where: { userId, isDefault: true, deletedAt: null },
+      });
+
+      if (!payoutMethod) {
+        throw new BadRequestException(
+          'No default payout method found. Please add a payout method first.',
+        );
+      }
+      payoutMethodId = payoutMethod.id;
+    }
+
+    const feeCalculation = await this.feeService.calculateFee(amount, method);
+
+    const payout = await this.prisma.payout.create({
+      data: {
+        userId,
+        walletId,
+        payoutMethodId,
+        amount,
+        currency,
+        method,
+        status: 'pending',
+        feeAmount: feeCalculation.feeAmount,
+        feePercentage: feeCalculation.feePercentage,
+        finalAmount: feeCalculation.finalAmount,
+      },
+    });
+
+    this.logger.log(
+      `Payout request created: ${payout.id} for user ${userId}, amount: ${amount} ${currency}`,
+    );
+
+    return {
+      id: payout.id,
+      amount: payout.amount,
+      currency: payout.currency,
+      method: payout.method,
       status: payout.status,
       createdAt: payout.createdAt,
       feeAmount: payout.feeAmount,
@@ -337,6 +444,8 @@ export class PayoutsService {
       orderBy: { createdAt: 'asc' },
       select: { id: true, userId: true, amount: true, currency: true, status: true, createdAt: true },
     });
+  }
+
   async batchProcessPayouts(payoutIds: number[]): Promise<{
     processed: number;
     failed: number;

@@ -6,10 +6,14 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AnomalyDetectionService } from './anomaly-detection.service';
 import { AnomalyDetectionProcessor } from './anomaly-detection.processor';
 import { BullModule } from '@nestjs/bullmq';
-import { ANOMALY_DETECTION_QUEUE } from './anomaly-detection.queue';
+import {
+  ANOMALY_DETECTION_QUEUE,
+  ANOMALY_DETECTION_QUEUE_PRIORITY,
+} from './anomaly-detection.queue';
 import { AuthModule } from '../auth/auth.module';
 import { CurrencyConversionService } from './currency-conversion.service';
 import { RedisModule } from '../redis/redis.module';
+import { MonthlySummaryService } from './monthly-summary.service';
 
 @Module({
   imports: [
@@ -27,6 +31,7 @@ import { RedisModule } from '../redis/redis.module';
     AnomalyDetectionService,
     AnomalyDetectionProcessor,
     CurrencyConversionService,
+    MonthlySummaryService,
   ],
   exports: [EarningsService, AnomalyDetectionService, CurrencyConversionService],
 })
