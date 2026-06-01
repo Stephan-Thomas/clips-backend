@@ -10,6 +10,7 @@ import { ANOMALY_DETECTION_QUEUE } from './anomaly-detection.queue';
 import { AuthModule } from '../auth/auth.module';
 import { CurrencyConversionService } from './currency-conversion.service';
 import { RedisModule } from '../redis/redis.module';
+import { MonthlySummaryService } from './monthly-summary.service';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { RedisModule } from '../redis/redis.module';
     AnomalyDetectionService,
     AnomalyDetectionProcessor,
     CurrencyConversionService,
+    MonthlySummaryService,
   ],
   exports: [EarningsService, AnomalyDetectionService, CurrencyConversionService],
 })

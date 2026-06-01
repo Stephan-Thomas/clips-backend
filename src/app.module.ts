@@ -29,11 +29,14 @@ import { RequestIdMiddleware } from './logger/request-id.middleware';
 import { UsersModule } from './users/users.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { HealthModule } from './health/health.module';
+import { QueueDashboardModule } from './queue-dashboard/queue-dashboard.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     EventEmitterModule.forRoot(),
+    ScheduleModule.forRoot(),
     BullModule.forRoot({
       connection: {
         host: process.env.REDIS_HOST ?? 'localhost',
@@ -57,31 +60,26 @@ import { HealthModule } from './health/health.module';
             ttl: 60000,
             limit: 10,
           },
-          // 3 requests per 15 minutes — magic-link, forgot-password
           {
             name: 'sensitive',
             ttl: 900000,
             limit: 3,
           },
-          // 3 requests per hour — email verification resend
           {
             name: 'emailVerify',
             ttl: 3600000,
             limit: 3,
           },
-          // 10 requests per minute — clip generation (per user)
           {
             name: 'clipGenerate',
             ttl: 60000,
             limit: 10,
           },
-          // 5 requests per minute — NFT mint (per user)
           {
             name: 'nftMint',
             ttl: 60000,
             limit: 5,
           },
-          // 10 wallet connect/disconnect requests per minute (per user)
           {
             name: 'walletConnect',
             ttl: 60000,
@@ -92,7 +90,6 @@ import { HealthModule } from './health/health.module';
             ttl: 60000,
             limit: 10,
           },
-          // 5 transaction send requests per minute — tighter to prevent abuse
           {
             name: 'transactionSend',
             ttl: 60000,
@@ -128,6 +125,7 @@ import { HealthModule } from './health/health.module';
     UsersModule,
     TransactionsModule,
     HealthModule,
+    QueueDashboardModule,
   ],
   controllers: [AppController],
   providers: [
