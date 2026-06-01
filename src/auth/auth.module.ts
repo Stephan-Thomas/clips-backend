@@ -39,7 +39,10 @@ import { AdminGuard } from './guards/admin.guard';
       },
     }),
     CsrfModule,
-    BullModule.registerQueue({ name: EMAIL_DELIVERY_QUEUE }),
+    BullModule.registerQueue({
+      name: EMAIL_DELIVERY_QUEUE,
+      defaultJobOptions: { priority: EMAIL_DELIVERY_QUEUE_PRIORITY },
+    }),
   ],
   controllers: [AuthController],
   providers: [

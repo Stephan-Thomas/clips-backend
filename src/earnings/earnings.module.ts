@@ -12,7 +12,10 @@ import { AuthModule } from '../auth/auth.module';
 @Module({
   imports: [
     PrismaModule,
-    BullModule.registerQueue({ name: ANOMALY_DETECTION_QUEUE }),
+    BullModule.registerQueue({
+      name: ANOMALY_DETECTION_QUEUE,
+      defaultJobOptions: { priority: ANOMALY_DETECTION_QUEUE_PRIORITY },
+    }),
     AuthModule,
   ],
   controllers: [EarningsController, AdminAnomaliesController],

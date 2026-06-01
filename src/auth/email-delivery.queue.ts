@@ -1,6 +1,12 @@
 export const EMAIL_DELIVERY_QUEUE = 'email-delivery';
 export const EMAIL_DELIVERY_JOB = 'deliver-email';
 
+/**
+ * Email delivery jobs are moderate priority; they should be processed faster
+ * than background analytics work but lower than urgent payouts.
+ */
+export const EMAIL_DELIVERY_QUEUE_PRIORITY = 5;
+
 export type EmailTemplate = 'verification' | 'password-reset' | 'magic-link';
 
 export interface EmailDeliveryJobData {
@@ -37,4 +43,5 @@ export const EMAIL_JOB_OPTIONS = {
   },
   removeOnComplete: true,
   removeOnFail: false,
+  priority: EMAIL_DELIVERY_QUEUE_PRIORITY,
 } as const;

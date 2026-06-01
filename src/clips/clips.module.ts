@@ -28,8 +28,14 @@ import { UserPlatformModule } from '../user-platform/user-platform.module';
      * Concurrency is kept low (default 1) so the worker doesn't saturate the host.
      * Configured via the @Processor decorator on ClipGenerationProcessor.
      */
-    BullModule.registerQueue({ name: CLIP_GENERATION_QUEUE }),
-    BullModule.registerQueue({ name: NFT_MINT_QUEUE }),
+    BullModule.registerQueue({
+      name: CLIP_GENERATION_QUEUE,
+      defaultJobOptions: { priority: CLIP_GENERATION_QUEUE_PRIORITY },
+    }),
+    BullModule.registerQueue({
+      name: NFT_MINT_QUEUE,
+      defaultJobOptions: { priority: NFT_MINT_QUEUE_PRIORITY },
+    }),
     PrismaModule,
     StellarModule,
     CircuitBreakerModule,
@@ -41,7 +47,10 @@ import { UserPlatformModule } from '../user-platform/user-platform.module';
      * on network responses, not consuming CPU/memory.
      * Concurrency is configured via the @Processor decorator on ClipPostingProcessor.
      */
-    BullModule.registerQueue({ name: CLIP_POSTING_QUEUE }),
+    BullModule.registerQueue({
+      name: CLIP_POSTING_QUEUE,
+      defaultJobOptions: { priority: CLIP_POSTING_QUEUE_PRIORITY },
+    }),
 
     PrismaModule,
     StellarModule,

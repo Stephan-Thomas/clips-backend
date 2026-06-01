@@ -2,6 +2,12 @@
 export const CLIP_GENERATION_QUEUE = 'clip-generation';
 
 /**
+ * Clip generation jobs are CPU and memory intensive, so they are scheduled
+ * at normal priority relative to lightweight background work.
+ */
+export const CLIP_GENERATION_QUEUE_PRIORITY = 5;
+
+/**
  * Default job options applied to every clip-generation job.
  *
  * Retry strategy (transient failures: network, FFmpeg OOM, Cloudinary rate-limits):
@@ -22,4 +28,5 @@ export const CLIP_JOB_OPTIONS = {
     /** Base delay in ms — doubles on every retry */
     delay: 2000,
   },
+  priority: CLIP_GENERATION_QUEUE_PRIORITY,
 } as const;

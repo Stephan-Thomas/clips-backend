@@ -5,7 +5,10 @@ import { ClipsModule } from '../clips/clips.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { BullModule } from '@nestjs/bullmq';
 import { VideoUploadService } from './video-upload.service';
-import { CLIP_GENERATION_QUEUE } from '../clips/clip-generation.queue';
+import {
+  CLIP_GENERATION_QUEUE,
+  CLIP_GENERATION_QUEUE_PRIORITY,
+} from '../clips/clip-generation.queue';
 
 @Module({
   imports: [
@@ -13,6 +16,7 @@ import { CLIP_GENERATION_QUEUE } from '../clips/clip-generation.queue';
     PrismaModule,
     BullModule.registerQueue({
       name: CLIP_GENERATION_QUEUE,
+      defaultJobOptions: { priority: CLIP_GENERATION_QUEUE_PRIORITY },
     }),
   ],
   controllers: [VideosController, VideoUploadController],

@@ -2,6 +2,11 @@
 export const CLIP_POSTING_QUEUE = 'clip-posting';
 
 /**
+ * Posting jobs are I/O bound and lower priority than clip generation.
+ */
+export const CLIP_POSTING_QUEUE_PRIORITY = 10;
+
+/**
  * Job data shape for a posting job.
  */
 export interface ClipPostingJob {
@@ -32,4 +37,5 @@ export const CLIP_POSTING_JOB_OPTIONS = {
     type: 'exponential' as const,
     delay: 2000,
   },
+  priority: CLIP_POSTING_QUEUE_PRIORITY,
 } as const;
