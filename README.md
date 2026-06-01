@@ -111,23 +111,35 @@ ENABLE_SWAGGER_UI=true
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in the values. Key variables:
+Copy `.env.example` to `.env` and fill in the values:
 
-```env
-DATABASE_URL=postgresql://...
-REDIS_HOST=localhost
-
-# BullMQ Worker Scaling (see BULLMQ_WORKER_SCALING.md for details)
-BULLMQ_CLIP_GENERATION_CONCURRENCY=2
-BULLMQ_EMAIL_DELIVERY_CONCURRENCY=5
-
-# Stellar (see section below)
-STELLAR_NETWORK=testnet
-MIN_STELLAR_PAYOUT=5
-METRICS_TOKEN=change-this-in-production
+```bash
+cp .env.example .env
 ```
 
-For detailed guidance on configuring BullMQ worker concurrency for different environments, see [BULLMQ_WORKER_SCALING.md](./BULLMQ_WORKER_SCALING.md).
+### Key Variables Reference
+
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `ENCRYPTION_SECRET` | ✅ | Min 32-char secret for encrypting sensitive data |
+| `JWT_SECRET` | ✅ | Secret for signing JWT access tokens |
+| `REDIS_HOST` / `REDIS_PORT` | ✅ | Redis connection (used by BullMQ and rate limiting) |
+| `STELLAR_NETWORK` | ✅ | `testnet` (dev) or `public` (production) |
+| `SOROBAN_NFT_CONTRACT_ID` | ✅ | Deployed Soroban NFT contract ID |
+| `CLOUDINARY_CLOUD_NAME` | ✅ | Cloudinary cloud name for video/thumbnail CDN |
+| `CLOUDINARY_API_KEY` | ✅ | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | ✅ | Cloudinary API secret |
+| `AYRSHARE_API_KEY` | ✅ | Ayrshare key for multi-platform social posting |
+| `PINATA_JWT` | ✅ | Pinata JWT for uploading NFT metadata to IPFS |
+| `WEBHOOK_SECRET` | ✅ | HMAC-SHA256 secret for Stellar payment webhooks |
+| `METRICS_TOKEN` | ✅ | Bearer token protecting the `/metrics` endpoint |
+| `BULLMQ_CLIP_GENERATION_CONCURRENCY` | — | Parallel clip jobs (default: `2`) |
+| `BULLMQ_EMAIL_DELIVERY_CONCURRENCY` | — | Parallel email jobs (default: `5`) |
+| `MIN_PAYOUT_USD` / `MAX_PAYOUT_USD` | — | Payout limits in USD (default: `5` / `10000`) |
+| `LEADERBOARD_ENABLED` | — | Enable public earnings leaderboard (default: `false`) |
+
+For detailed BullMQ concurrency tuning, see [BULLMQ_WORKER_SCALING.md](./BULLMQ_WORKER_SCALING.md).
 
 ## Stellar Network Configuration
 
