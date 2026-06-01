@@ -15,7 +15,8 @@ import { FeeService } from './fee.service';
 @Injectable()
 export class PayoutsService {
   private readonly logger = new Logger(PayoutsService.name);
-  private readonly minPayoutAmount: number;
+  private readonly defaultPayoutCurrency =
+    process.env.DEFAULT_PAYOUT_CURRENCY ?? 'USD';
 
   constructor(
     private prisma: PrismaService,
@@ -70,11 +71,11 @@ export class PayoutsService {
     const pendingBalance =
       (totalEarnings._sum.amount ?? 0) - (totalPaidOut._sum.amount ?? 0);
 
-    if (pendingBalance < this.minPayoutAmount) {
-      throw new BadRequestException(
-        `Minimum payout amount is $${this.minPayoutAmount}. Your pending balance is $${pendingBalance.toFixed(2)}.`,
-      );
-    }
+    const currency = this.defaultPayoutCurrency;
+    const payoutAmount = this.payoutLimitsService.resolvePayoutAmount(
+      availableBalance,
+      currency,
+    );
 
     // Calculate fees
     const feeCalculation = await this.feeService.calculateFee(
@@ -87,8 +88,8 @@ export class PayoutsService {
       data: {
         userId,
         walletId: wallet.id,
-        amount: pendingBalance,
-        currency: 'USD',
+        amount: payoutAmount,
+        currency,
         method: 'stellar',
         status: 'pending',
         feeAmount: feeCalculation.feeAmount,

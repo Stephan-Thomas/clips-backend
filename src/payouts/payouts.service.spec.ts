@@ -19,7 +19,6 @@ import {
 
 describe('PayoutsService', () => {
   let service: PayoutsService;
-  let prisma: jest.Mocked<PrismaService>;
 
   const mockPrismaService = {
     payout: {
@@ -67,7 +66,6 @@ describe('PayoutsService', () => {
     }).compile();
 
     service = module.get<PayoutsService>(PayoutsService);
-    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -100,7 +98,7 @@ describe('PayoutsService', () => {
       );
     });
 
-    it('should throw BadRequestException if balance below minimum', async () => {
+    it('should throw BadRequestException when balance is below minimum', async () => {
       mockPrismaService.payout.findFirst.mockResolvedValue(null);
       mockPrismaService.wallet.findFirst.mockResolvedValue({
         id: 1,
@@ -112,10 +110,49 @@ describe('PayoutsService', () => {
       mockPrismaService.payout.aggregate.mockResolvedValue({
         _sum: { amount: 0 },
       });
+      mockPayoutLimitsService.resolvePayoutAmount.mockImplementation(() => {
+        throw new BadRequestException(
+          'Minimum payout for USD is 5. Your available balance is 3.00 USD.',
+        );
+      });
 
       await expect(service.requestPayout(1)).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    it('should create payout capped at maximum limit', async () => {
+      mockPrismaService.payout.findFirst.mockResolvedValue(null);
+      mockPrismaService.wallet.findFirst.mockResolvedValue({
+        id: 1,
+        address: 'GTEST...',
+      });
+      mockPrismaService.earning.aggregate.mockResolvedValue({
+        _sum: { amount: 20000 },
+      });
+      mockPrismaService.payout.aggregate.mockResolvedValue({
+        _sum: { amount: 0 },
+      });
+      mockPayoutLimitsService.resolvePayoutAmount.mockReturnValue(10000);
+      mockPrismaService.payout.create.mockResolvedValue({
+        id: 9,
+        amount: 10000,
+        status: 'pending',
+        createdAt: new Date(),
+      });
+
+      const result = await service.requestPayout(1);
+
+      expect(mockPayoutLimitsService.resolvePayoutAmount).toHaveBeenCalledWith(
+        20000,
+        'USD',
+      );
+      expect(mockPrismaService.payout.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ amount: 10000, currency: 'USD' }),
+        }),
+      );
+      expect(result.amount).toBe(10000);
     });
   });
 
