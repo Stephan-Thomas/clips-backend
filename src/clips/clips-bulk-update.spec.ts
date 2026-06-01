@@ -35,7 +35,7 @@ function makeService() {
     },
   };
   // ClipGenerationProcessor not needed for bulk-update tests
-  const service = new ClipsService(null as any, emitter, prisma as any, null as any);
+  const service = new ClipsService(null as any, emitter, prisma as any, null as any, null as any);
   return { service, emitter, prisma };
 }
 
