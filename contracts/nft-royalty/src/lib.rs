@@ -395,6 +395,7 @@ mod test {
         let client = NFTContractClient::new(&env, &contract_id);
 
         let creator = Address::generate(&env);
+        let buyer = Address::generate(&env);
         let token_id = 1u128;
 
         client.mint(
@@ -407,6 +408,9 @@ mod test {
 
         assert_eq!(client.owner_of(&token_id), creator);
         assert_eq!(client.total_supply(), 1);
+
+        client.transfer(&creator, &buyer, &token_id);
+        assert_eq!(client.owner_of(&token_id), buyer);
 
         let royalties = client.get_royalties(&token_id);
         assert_eq!(royalties.get(creator).unwrap(), 1000);
