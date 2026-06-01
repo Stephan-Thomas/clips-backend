@@ -3,6 +3,7 @@ import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import { MailService } from './mail.service';
+import { MetricsService } from '../metrics/metrics.service';
 import {
   EMAIL_DELIVERY_QUEUE,
   EmailDeliveryJobData,
@@ -23,7 +24,7 @@ export class EmailDeliveryProcessor extends WorkerHost {
 
   constructor(
     private readonly mailService: MailService,
-    private readonly configService: ConfigService,
+    private readonly metricsService: MetricsService,
   ) {
     super();
     const config = getBullMQWorkerConfig(configService);
@@ -33,19 +34,54 @@ export class EmailDeliveryProcessor extends WorkerHost {
   }
 
   async process(job: Job<EmailDeliveryJobData>): Promise<void> {
-    await this.mailService.sendTemplatedEmail(job.data);
+    this.logger.log(
+      `Processing email job ${job.id} — attempt ${job.attemptsMade + 1}/${job.opts.attempts ?? 1} ` +
+        `to=${job.data.to} template=${job.data.template}`,
+    );
+
+    const jobMetricId = `${EMAIL_DELIVERY_QUEUE}:${job.id}`;
+    this.metricsService.recordJobStart(jobMetricId);
+
+    try {
+      await this.mailService.sendTemplatedEmail(job.data);
+      this.metricsService.recordJobCompletion(jobMetricId, EMAIL_DELIVERY_QUEUE, 'success');
+    } catch (error) {
+      this.metricsService.recordJobCompletion(jobMetricId, EMAIL_DELIVERY_QUEUE, 'failure');
+      this.metricsService.recordJobFailure(EMAIL_DELIVERY_QUEUE, error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }
 
   @OnWorkerEvent('failed')
   onFailed(job: Job<EmailDeliveryJobData>, error: Error): void {
-    const attempts = job.opts.attempts ?? 1;
-    const isTerminalFailure = job.attemptsMade >= attempts;
-    if (!isTerminalFailure) {
+    const maxAttempts = job.opts.attempts ?? 1;
+    const isFinalAttempt = job.attemptsMade >= maxAttempts;
+
+    if (!isFinalAttempt) {
+      // Intermediate failure — compute the next backoff delay for the log message
+      const backoffDelay = job.opts.backoff
+        ? typeof job.opts.backoff === 'number'
+          ? job.opts.backoff
+          : // exponential: delay * 2^(attemptsMade - 1)
+            (job.opts.backoff.delay ?? 500) *
+            Math.pow(2, job.attemptsMade - 1)
+        : 0;
+
+      this.logger.warn(
+        `[RETRY] Email job ${job.id} failed on attempt ${job.attemptsMade}/${maxAttempts} — ` +
+          `to=${job.data.to} template=${job.data.template} — ` +
+          `reason: ${error.message} — ` +
+          `retrying in ~${Math.round(backoffDelay / 1000)}s`,
+      );
       return;
     }
 
     this.logger.error(
-      `Email job moved to DLQ after ${attempts} attempts for ${job.data.to}: ${error.message}`,
+      `[FINAL FAILURE] Email job ${job.id} moved to DLQ after ${maxAttempts} attempts — ` +
+        `to=${job.data.to} template=${job.data.template} — ` +
+        `reason: ${error.message}`,
+      error.stack,
     );
+    this.metricsService.recordJobFailure(EMAIL_DELIVERY_QUEUE, 'final_failure');
   }
 }

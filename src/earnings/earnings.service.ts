@@ -1,5 +1,16 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { buildEarningsCsv } from './earnings-csv.util';
+
+export interface EarningsExportOptions {
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface EarningsExportResult {
+  filename: string;
+  content: string;
+}
 
 export interface EarningsBreakdown {
   royalties: number;
@@ -9,16 +20,8 @@ export interface EarningsBreakdown {
 export interface EarningsHistoryItem {
   date: string;
   amount: number;
-  type: 'royalty' | 'subscription' | 'payout';
-}
-
-export interface EarningsDashboard {
-  totalEarned: number;
-  pendingPayout: number;
-  paidOut: number;
-  breakdown: EarningsBreakdown;
-  history: EarningsHistoryItem[];
-}
+  source: string | null;
+};
 
 export interface LeaderboardEntry {
   rank: number;
@@ -31,6 +34,61 @@ export class EarningsService {
   private readonly logger = new Logger(EarningsService.name);
 
   constructor(private prisma: PrismaService) {}
+
+  async getUserTotalEarnings(userId: number): Promise<UserTotalEarnings> {
+    const earnings = await this.prisma.$transaction((tx) =>
+      tx.earning.findMany({
+        where: this.userEarningsWhere(userId),
+        select: { amount: true, source: true },
+      }),
+    );
+
+    return this.aggregateEarnings(earnings);
+  }
+
+  async getEarningsByPeriod(
+    userId: number,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<EarningsByPeriod> {
+    this.validatePeriod(startDate, endDate);
+
+    const periodEnd = new Date(endDate);
+    periodEnd.setUTCHours(23, 59, 59, 999);
+
+    const earnings = await this.prisma.$transaction((tx) =>
+      tx.earning.findMany({
+        where: {
+          ...this.userEarningsWhere(userId),
+          date: { gte: startDate, lte: periodEnd },
+        },
+        select: {
+          id: true,
+          amount: true,
+          source: true,
+          date: true,
+          clip: { select: { title: true } },
+        },
+        orderBy: { date: 'desc' },
+      }),
+    );
+
+    const aggregated = this.aggregateEarnings(earnings);
+
+    return {
+      startDate: startDate.toISOString(),
+      endDate: periodEnd.toISOString(),
+      total: aggregated.total,
+      breakdown: aggregated.breakdown,
+      items: earnings.map((earning) => ({
+        id: earning.id,
+        amount: earning.amount,
+        source: earning.source,
+        date: earning.date.toISOString(),
+        clipTitle: earning.clip.title,
+      })),
+    };
+  }
 
   async getEarningsDashboard(
     userId: number,
@@ -57,21 +115,21 @@ export class EarningsService {
       select: { amount: true, status: true, createdAt: true },
     });
 
-    const paidOut = payouts
+    const paidOut = snapshot.payouts
       .filter((p) => p.status === 'completed')
       .reduce((sum, p) => sum + p.amount, 0);
 
-    const pendingPayout = payouts
+    const pendingPayout = snapshot.payouts
       .filter((p) => p.status === 'pending' || p.status === 'processing')
       .reduce((sum, p) => sum + p.amount, 0);
 
     const historyItems: EarningsHistoryItem[] = [
-      ...earnings.map((e) => ({
+      ...snapshot.earnings.map((e) => ({
         date: e.date.toISOString(),
         amount: e.amount,
         type: e.source as 'royalty' | 'subscription',
       })),
-      ...payouts.map((p) => ({
+      ...snapshot.payouts.map((p) => ({
         date: p.createdAt.toISOString(),
         amount: p.amount,
         type: 'payout' as const,
@@ -86,13 +144,10 @@ export class EarningsService {
     const paginatedHistory = historyItems.slice(start, start + limit);
 
     return {
-      totalEarned,
+      totalEarned: totals.total,
       pendingPayout,
       paidOut,
-      breakdown: {
-        royalties,
-        subscriptions,
-      },
+      breakdown: totals.breakdown,
       history: paginatedHistory,
     };
   }

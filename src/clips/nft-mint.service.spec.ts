@@ -13,13 +13,27 @@ describe('NftMintService uploadMetadataToIPFS', () => {
     networkPassphrase: 'Test SDF Network ; September 2015',
     rpcUrl: 'https://soroban-testnet.stellar.org',
     network: 'testnet',
+    validateAddress: jest.fn().mockReturnValue({ valid: true }),
+  };
+
+  const metricsMock = {
+    incrementNftMints: jest.fn(),
+  };
+
+  const circuitBreakerMock = {
+    execute: jest.fn().mockImplementation((_config, fn) => fn()),
   };
 
   let service: NftMintService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new NftMintService(prismaMock as any, stellarMock as any);
+    service = new NftMintService(
+      prismaMock as any,
+      stellarMock as any,
+      metricsMock as any,
+      circuitBreakerMock as any,
+    );
   });
 
   it('throws NotFoundException when clip does not exist', async () => {

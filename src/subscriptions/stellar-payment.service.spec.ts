@@ -64,6 +64,7 @@ describe('StellarPaymentService', () => {
 
   describe('createPaymentIntent', () => {
     it('validates destination address and creates intent', async () => {
+      const userId = 1;
       const dto: CreateStellarSubscriptionDto = {
         plan: 'pro',
         asset: 'xlm',
