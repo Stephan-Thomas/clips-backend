@@ -1,7 +1,8 @@
 import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard, ThrottlerStorage } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerRedisModule } from './common/throttler/throttler-redis.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -41,9 +42,10 @@ import { HealthModule } from './health/health.module';
     }),
     PrismaModule,
     ThrottlerModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
+      imports: [ConfigModule, ThrottlerRedisModule],
+      inject: [ConfigService, ThrottlerStorage],
+      useFactory: (config: ConfigService, storage: ThrottlerStorage) => ({
+        storage,
         throttlers: [
           {
             name: 'default',
@@ -76,6 +78,23 @@ import { HealthModule } from './health/health.module';
           // 5 requests per minute — NFT mint (per user)
           {
             name: 'nftMint',
+            ttl: 60000,
+            limit: 5,
+          },
+          // 10 wallet connect/disconnect requests per minute (per user)
+          {
+            name: 'walletConnect',
+            ttl: 60000,
+            limit: 10,
+          },
+          {
+            name: 'walletDisconnect',
+            ttl: 60000,
+            limit: 10,
+          },
+          // 5 transaction send requests per minute — tighter to prevent abuse
+          {
+            name: 'transactionSend',
             ttl: 60000,
             limit: 5,
           },
