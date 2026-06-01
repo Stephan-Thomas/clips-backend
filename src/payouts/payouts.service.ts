@@ -107,34 +107,52 @@ export class PayoutsService {
     };
   }
 
-  async getPayoutHistory(userId: number): Promise<
-    Array<{
-      id: number;
-      amount: number;
-      currency: string;
-      method: string;
-      status: string;
-      transactionId: string | null;
-      onChainTxHash: string | null;
-      createdAt: Date;
-      confirmedAt: Date | null;
-    }>
-  > {
+  async getPayouts(
+    userId: number,
+    status?: string,
+  ): Promise<PayoutListItem[]> {
+    const filterStatus = this.parseStatusFilter(status);
+
     return this.prisma.payout.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        amount: true,
-        currency: true,
-        method: true,
-        status: true,
-        transactionId: true,
-        onChainTxHash: true,
-        createdAt: true,
-        confirmedAt: true,
+      where: {
+        userId,
+        ...(filterStatus ? { status: filterStatus } : {}),
       },
+      orderBy: { createdAt: 'desc' },
+      select: payoutListSelect,
     });
+  }
+
+  async getPayoutById(
+    userId: number,
+    payoutId: number,
+  ): Promise<PayoutDetail> {
+    const payout = await this.prisma.payout.findFirst({
+      where: { id: payoutId, userId },
+      select: payoutDetailSelect,
+    });
+
+    if (!payout) {
+      throw new NotFoundException('Payout record not found');
+    }
+
+    return payout;
+  }
+
+  private parseStatusFilter(status?: string): PayoutFilterStatus | undefined {
+    if (!status) {
+      return undefined;
+    }
+
+    if (
+      !PAYOUT_FILTER_STATUSES.includes(status as PayoutFilterStatus)
+    ) {
+      throw new BadRequestException(
+        `status must be one of: ${PAYOUT_FILTER_STATUSES.join(', ')}`,
+      );
+    }
+
+    return status as PayoutFilterStatus;
   }
 
   async processPayout(payoutId: number): Promise<{

@@ -3,9 +3,10 @@ import {
   Post,
   Get,
   Param,
+  Query,
   UseGuards,
   Req,
-  Body,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PayoutsService } from './payouts.service';
@@ -26,8 +27,19 @@ export class PayoutsController {
   }
 
   @Get()
-  async getPayoutHistory(@Req() req: RequestWithUser) {
-    return this.payoutsService.getPayoutHistory(req.user.userId);
+  async listPayouts(
+    @Req() req: RequestWithUser,
+    @Query('status') status?: string,
+  ) {
+    return this.payoutsService.getPayouts(req.user.userId, status);
+  }
+
+  @Get(':id')
+  async getPayout(
+    @Req() req: RequestWithUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.payoutsService.getPayoutById(req.user.userId, id);
   }
 
   @Post(':id/process')
