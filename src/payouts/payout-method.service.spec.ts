@@ -307,6 +307,17 @@ describe('PayoutMethodService', () => {
         NotFoundException,
       );
     });
+
+    it('should throw NotFoundException for soft-deleted method', async () => {
+      const userId = 1;
+      const methodId = 1;
+
+      mockPrismaService.payoutMethod.findFirst.mockResolvedValue(null);
+
+      await expect(service.findOne(methodId, userId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 
   describe('findOneWithSensitiveData', () => {
@@ -344,6 +355,35 @@ describe('PayoutMethodService', () => {
       );
       expect(result.accountNumber).toBe('1234567890');
       expect(result.routingNumber).toBe('021000021');
+    });
+
+    it('should throw NotFoundException for soft-deleted method', async () => {
+      const userId = 1;
+      const methodId = 1;
+      const mockMethod = {
+        id: methodId,
+        userId,
+        type: 'bank_account',
+        isDefault: true,
+        encryptedAccountNumber: 'encrypted_1234567890',
+        encryptedRoutingNumber: 'encrypted_021000021',
+        encryptedSwiftCode: null,
+        encryptedIban: null,
+        bankName: 'Chase Bank',
+        accountHolderName: 'John Doe',
+        country: 'US',
+        currency: 'USD',
+        lastFourDigits: '7890',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        deletedAt: new Date(),
+      };
+
+      mockPrismaService.payoutMethod.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.findOneWithSensitiveData(methodId, userId),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -406,6 +446,18 @@ describe('PayoutMethodService', () => {
         NotFoundException,
       );
     });
+
+    it('should throw NotFoundException for soft-deleted method', async () => {
+      const userId = 1;
+      const methodId = 1;
+      const dto: UpdatePayoutMethodDto = { bankName: 'Updated Bank' };
+
+      mockPrismaService.payoutMethod.findFirst.mockResolvedValue(null);
+
+      await expect(service.update(methodId, userId, dto)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 
   describe('remove', () => {
@@ -444,6 +496,21 @@ describe('PayoutMethodService', () => {
       await expect(service.remove(methodId, userId)).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('should use deletedAt: null filter to prevent re-deleting soft-deleted method', async () => {
+      const userId = 1;
+      const methodId = 1;
+
+      mockPrismaService.payoutMethod.findFirst.mockResolvedValue(null);
+
+      await expect(service.remove(methodId, userId)).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(mockPrismaService.payoutMethod.findFirst).toHaveBeenCalledWith({
+        where: { id: methodId, userId, deletedAt: null },
+      });
     });
   });
 
