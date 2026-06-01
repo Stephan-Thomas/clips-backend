@@ -62,39 +62,37 @@ export class PayoutsService {
       );
     }
 
-    const totalEarnings = await this.prisma.earning.aggregate({
-      where: { clip: { video: { userId } }, deletedAt: null },
-      _sum: { amount: true },
-    });
-
-    const totalPaidOut = await this.prisma.payout.aggregate({
-      where: { userId, status: { in: ['completed', 'processing'] } },
-      _sum: { amount: true },
-    });
-
-    const availableBalance =
-      (totalEarnings._sum.amount ?? 0) - (totalPaidOut._sum.amount ?? 0);
-
     const currency = this.defaultPayoutCurrency;
-    const payoutAmount = availableBalance;
 
-    const feeCalculation = await this.feeService.calculateFee(
-      availableBalance,
-      'stellar',
-    );
+    const payout = await this.prisma.$transaction(async (tx) => {
+      const totalEarnings = await tx.earning.aggregate({
+        where: { clip: { video: { userId } }, deletedAt: null },
+        _sum: { amount: true },
+      });
 
-    const payout = await this.prisma.payout.create({
-      data: {
-        userId,
-        walletId: wallet.id,
-        amount: payoutAmount,
-        currency,
-        method: 'stellar',
-        status: 'pending',
-        feeAmount: feeCalculation.feeAmount,
-        feePercentage: feeCalculation.feePercentage,
-        finalAmount: feeCalculation.finalAmount,
-      },
+      const totalPaidOut = await tx.payout.aggregate({
+        where: { userId, status: { in: ['completed', 'processing'] } },
+        _sum: { amount: true },
+      });
+
+      const availableBalance =
+        (totalEarnings._sum.amount ?? 0) - (totalPaidOut._sum.amount ?? 0);
+
+      const fee = await this.feeService.calculateFee(availableBalance, 'stellar');
+
+      return tx.payout.create({
+        data: {
+          userId,
+          walletId: wallet.id,
+          amount: availableBalance,
+          currency,
+          method: 'stellar',
+          status: 'pending',
+          feeAmount: fee.feeAmount,
+          feePercentage: fee.feePercentage,
+          finalAmount: fee.finalAmount,
+        },
+      });
     });
 
     return {
@@ -446,6 +444,8 @@ export class PayoutsService {
       orderBy: { createdAt: 'asc' },
       select: { id: true, userId: true, amount: true, currency: true, status: true, createdAt: true },
     });
+  }
+
   async batchProcessPayouts(payoutIds: number[]): Promise<{
     processed: number;
     failed: number;

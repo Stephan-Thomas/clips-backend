@@ -84,4 +84,9 @@ export class EarningsController {
     const limitNum = Math.min(parseInt(limit, 10) || 10, 100);
     return this.earningsService.getLeaderboard(limitNum);
   }
+
+  @Get('by-platform')
+  async getEarningsByPlatform(@Req() req: RequestWithUser) {
+    return this.earningsService.getEarningsByPlatform(req.user.userId);
+  }
 }

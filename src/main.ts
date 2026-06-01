@@ -60,6 +60,9 @@ async function bootstrap() {
     .addTag('payouts', 'Revenue payouts')
     .addTag('earnings', 'Earnings tracking')
     .addTag('nfts', 'NFT minting and royalty queries')
+    .addTag('nft', 'NFT minting and royalty management')
+    .addTag('payout', 'Payout requests and processing')
+    .addTag('stellar', 'Stellar network interactions')
     .addTag('jobs', 'Background job management')
     .addTag('platforms', 'Social platform integrations')
     .build();

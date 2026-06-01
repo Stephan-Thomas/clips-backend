@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
@@ -19,6 +20,7 @@ import { NftMintService } from '../clips/nft-mint.service';
 import { RoyaltyQueryService, RoyaltyInfo } from './royalty-query.service';
 import { LoginGuard } from '../auth/guards/login.guard';
 
+@ApiTags('nft')
 @Controller('nfts')
 export class NftController {
   constructor(
@@ -34,6 +36,8 @@ export class NftController {
   @Post('mint')
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ nftMint: { limit: 5, ttl: 60000 } })
+  @ApiOperation({ summary: 'Mint a clip as an NFT (legacy)' })
+  @ApiResponse({ status: 201, description: 'NFT minted successfully' })
   async mint(@Body() dto: MintClipDto): Promise<MintResult> {
     return this.nftService.mintClip(dto);
   }
@@ -47,6 +51,9 @@ export class NftController {
   @Post('prepare-mint')
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ nftMint: { limit: 5, ttl: 60000 } })
+  @ApiOperation({ summary: 'Prepare a Soroban mint transaction (returns XDR for signing)' })
+  @ApiResponse({ status: 201, description: 'Mint transaction XDR returned' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async prepareMint(
     @Body() dto: PrepareMintDto,
     @Req() req: Request,
@@ -65,6 +72,9 @@ export class NftController {
    * Response: { royaltyBps: number, recipient: string }
    */
   @Get(':mintAddress/royalty')
+  @ApiOperation({ summary: 'Get on-chain royalty info for an NFT' })
+  @ApiParam({ name: 'mintAddress', description: 'NFT mint address / token ID' })
+  @ApiResponse({ status: 200, description: 'Royalty info returned' })
   async getRoyalty(
     @Param('mintAddress') mintAddress: string,
   ): Promise<RoyaltyInfo> {

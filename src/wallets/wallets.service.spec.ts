@@ -153,4 +153,21 @@ describe('WalletsService.connect', () => {
     });
     expect(result.id).toBe(1);
   });
+
+  it('includes deletedAt: null in upsert update to reactivate soft-deleted wallets', async () => {
+    mockStellarService.validateAddress.mockReturnValue({ valid: true });
+    const dto = {
+      address: 'GC6XOTK6L6LGBKIWH3IRUZPVUY4COGEMW4J5YINOSPKO27YKTUUHTZF3',
+      chain: 'stellar',
+      type: 'freighter',
+    };
+
+    await service.connect(42, dto);
+
+    expect(mockPrisma.wallet.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        update: expect.objectContaining({ deletedAt: null }),
+      }),
+    );
+  });
 });

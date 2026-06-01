@@ -10,11 +10,18 @@ const mockAyrshare = { post: jest.fn() };
 
 const mockUserPlatformService = { findAll: jest.fn() };
 
+const mockMetricsService = {
+  recordJobStart: jest.fn(),
+  recordJobCompletion: jest.fn(),
+  recordJobFailure: jest.fn(),
+};
+
 function makeProcessor() {
   return new ClipPostingProcessor(
     mockPrisma as any,
     mockAyrshare as any,
     mockUserPlatformService as any,
+    mockMetricsService as any,
   );
 }
 

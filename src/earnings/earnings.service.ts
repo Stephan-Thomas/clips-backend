@@ -356,4 +356,48 @@ export class EarningsService {
       totalEarned: total,
     }));
   }
+
+  async getEarningsByPlatform(userId: number): Promise<{
+    data: Array<{ platform: string; totalEarnings: number; count: number }>;
+    totalEarnings: number;
+  }> {
+    const earnings = await this.prisma.earning.findMany({
+      where: { 
+        clip: { video: { userId } }, 
+        deletedAt: null 
+      },
+      select: { 
+        amount: true, 
+        source: true 
+      },
+    });
+
+    const platformMap = new Map<string, { total: number; count: number }>();
+    let totalEarnings = 0;
+
+    for (const earning of earnings) {
+      const platform = earning.source || 'unknown';
+      const current = platformMap.get(platform) || { total: 0, count: 0 };
+      
+      platformMap.set(platform, {
+        total: current.total + earning.amount,
+        count: current.count + 1,
+      });
+      
+      totalEarnings += earning.amount;
+    }
+
+    const data = Array.from(platformMap.entries())
+      .map(([platform, stats]) => ({
+        platform,
+        totalEarnings: stats.total,
+        count: stats.count,
+      }))
+      .sort((a, b) => b.totalEarnings - a.totalEarnings);
+
+    return {
+      data,
+      totalEarnings,
+    };
+  }
 }
