@@ -10,6 +10,7 @@ import { StellarService } from '../stellar/stellar.service';
 import StellarSdk from '@stellar/stellar-sdk';
 import { MetricsService } from '../metrics/metrics.service';
 import { CircuitBreakerService, CircuitBreakerConfig } from '../common/circuit-breaker/circuit-breaker.service';
+import { ConfigService } from '../config/config.service';
 
 interface NftAttribute {
   trait_type: string;
@@ -35,20 +36,6 @@ interface UploadMetadataResult {
 export class NftMintService {
   private readonly logger = new Logger(NftMintService.name);
 
-  // This would typically be stored in config or env
-  private readonly CONTRACT_ID =
-    process.env.SOROBAN_NFT_CONTRACT_ID ||
-    'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEU4';
-
-  private readonly PLATFORM_WALLET =
-    process.env.PLATFORM_WALLET ||
-    'GDV76E6XN6A3Q3WXVZ4KPRQ7L6E6XN6A3Q3WXVZ4KPRQ7L6E6XN6'; // Placeholder if not set
-  private readonly PLATFORM_ROYALTY_BPS = parseInt(
-    process.env.PLATFORM_ROYALTY_BPS || '100',
-    10,
-  );
-  private readonly CREATOR_ROYALTY_BPS = 1000; // Requirement: 1000 bps for creator
-
   private readonly sorobanCircuitBreakerConfig: CircuitBreakerConfig = {
     name: 'soroban-nft-mint',
     failureThreshold: 5,
@@ -61,7 +48,24 @@ export class NftMintService {
     private readonly stellarService: StellarService,
     private readonly metricsService: MetricsService,
     private readonly circuitBreakerService: CircuitBreakerService,
+    private readonly config: ConfigService,
   ) {}
+
+  private get CONTRACT_ID(): string {
+    return this.config.sorobanNftContractId || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEU4';
+  }
+
+  private get PLATFORM_WALLET(): string {
+    return this.config.platformWallet || 'GDV76E6XN6A3Q3WXVZ4KPRQ7L6E6XN6A3Q3WXVZ4KPRQ7L6E6XN6';
+  }
+
+  private get PLATFORM_ROYALTY_BPS(): number {
+    return this.config.platformRoyaltyBps;
+  }
+
+  private get CREATOR_ROYALTY_BPS(): number {
+    return this.config.creatorRoyaltyBps;
+  }
 
   async uploadMetadataToIPFS(clipId: number): Promise<UploadMetadataResult> {
     const clip = await this.prisma.clip.findUnique({
