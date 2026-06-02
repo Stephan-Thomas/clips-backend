@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { EarningsService } from './earnings.service';
+import { EarningsAggregationService } from './earnings-aggregation.service';
+import { EarningsExportService } from './earnings-export.service';
 import { EarningsController } from './earnings.controller';
 import { AdminAnomaliesController } from './admin.controller';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -28,11 +30,13 @@ import { MonthlySummaryService } from './monthly-summary.service';
   controllers: [EarningsController, AdminAnomaliesController],
   providers: [
     EarningsService,
+    EarningsAggregationService,
+    EarningsExportService,
     AnomalyDetectionService,
     AnomalyDetectionProcessor,
     CurrencyConversionService,
     MonthlySummaryService,
   ],
-  exports: [EarningsService, AnomalyDetectionService, CurrencyConversionService],
+  exports: [EarningsService, EarningsAggregationService, EarningsExportService, AnomalyDetectionService, CurrencyConversionService],
 })
 export class EarningsModule {}
