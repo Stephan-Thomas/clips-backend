@@ -9,7 +9,7 @@ import {
   Req,
   Res,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { EarningsService } from './earnings.service';
 import { Request, Response } from 'express';
@@ -19,7 +19,7 @@ interface RequestWithUser extends Request {
   user: { userId: number };
 }
 
-@UseGuards(JwtAuthGuard)
+@Auth()
 @Controller('earnings')
 export class EarningsController {
   constructor(private readonly earningsService: EarningsService) {}

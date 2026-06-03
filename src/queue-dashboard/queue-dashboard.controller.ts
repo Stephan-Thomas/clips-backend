@@ -1,13 +1,10 @@
-import { Controller, Get, Req, Res, UseGuards, Next } from '@nestjs/common';
+import { Controller, Get, Req, Res, Next } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/decorators/roles.decorator';
+import { Auth } from '../auth/decorators/auth.decorator';
 import { QueueDashboardService } from './queue-dashboard.service';
 
 @Controller('admin/queues')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin')
+@Auth('admin')
 export class QueueDashboardController {
   constructor(private readonly queueDashboardService: QueueDashboardService) {}
 

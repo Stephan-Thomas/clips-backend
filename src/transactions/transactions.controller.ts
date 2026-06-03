@@ -1,14 +1,14 @@
-import { Controller, Post, Body, Req, UseGuards, ValidationPipe } from '@nestjs/common';
+import { Controller, Post, Body, Req, ValidationPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Auth } from '../auth/decorators/auth.decorator';
 import { TransactionsService } from './transactions.service';
 import { CreateTransactionDto } from './dto/send-transaction.dto';
 
 @ApiTags('transactions')
 @ApiBearerAuth('access-token')
 @Controller('transactions')
-@UseGuards(JwtAuthGuard)
+@Auth()
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
 

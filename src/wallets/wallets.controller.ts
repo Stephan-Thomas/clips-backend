@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Auth } from '../auth/decorators/auth.decorator';
 import { WalletsService, DisconnectResult } from './wallets.service';
 import { CreateWalletConnectionDto } from './dto/connect-wallet.dto';
 import { WalletOwnershipGuard } from './guards/wallet-ownership.guard';
@@ -24,7 +24,7 @@ interface AuthRequest extends Request {
 @ApiTags('wallets')
 @ApiBearerAuth('access-token')
 @Controller('wallets')
-@UseGuards(JwtAuthGuard)
+@Auth()
 export class WalletsController {
   constructor(private readonly walletsService: WalletsService) {}
 

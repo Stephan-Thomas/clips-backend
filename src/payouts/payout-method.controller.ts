@@ -6,12 +6,11 @@ import {
   Delete,
   Body,
   Param,
-  UseGuards,
   Req,
   ParseIntPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Auth } from '../auth/decorators/auth.decorator';
 import { PayoutMethodService } from './payout-method.service';
 import { CreatePayoutMethodDto } from './dto/create-payout-method.dto';
 import { UpdatePayoutMethodDto } from './dto/update-payout-method.dto';
@@ -23,7 +22,7 @@ interface RequestWithUser extends Request {
 
 @ApiTags('payout-methods')
 @Controller('payout-methods')
-@UseGuards(JwtAuthGuard)
+@Auth()
 @ApiBearerAuth()
 export class PayoutMethodController {
   constructor(private readonly payoutMethodService: PayoutMethodService) {}

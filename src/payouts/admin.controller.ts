@@ -2,11 +2,10 @@ import {
   Controller,
   Post,
   Body,
-  UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Auth } from '../auth/decorators/auth.decorator';
 import { Admin } from '../auth/decorators/admin.decorator';
 import { PayoutsService } from './payouts.service';
 
@@ -15,7 +14,7 @@ interface BatchApproveDto {
 }
 
 @Controller('admin/payouts')
-@UseGuards(JwtAuthGuard)
+@Auth()
 @Admin()
 export class AdminPayoutsController {
   constructor(private readonly payoutsService: PayoutsService) {}

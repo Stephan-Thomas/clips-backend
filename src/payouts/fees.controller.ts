@@ -6,14 +6,13 @@ import {
   Delete,
   Body,
   Param,
-  UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Auth } from '../auth/decorators/auth.decorator';
 import { Admin } from '../auth/decorators/admin.decorator';
 import { FeeService } from './fee.service';
 
 @Controller('admin/fees')
-@UseGuards(JwtAuthGuard)
+@Auth()
 @Admin()
 export class AdminFeesController {
   constructor(private readonly feeService: FeeService) {}

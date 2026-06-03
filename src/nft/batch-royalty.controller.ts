@@ -2,12 +2,11 @@ import {
   Controller,
   Post,
   Body,
-  UseGuards,
   Logger,
   BadRequestException,
 } from '@nestjs/common';
 import { BatchRoyaltyService } from './batch-royalty.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Auth } from '../auth/decorators/auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 
 class BatchRoyaltyQueryDto {
@@ -19,7 +18,7 @@ class BatchRoyaltyQueryDto {
  * Allows frontends to fetch royalty data for multiple tokens in a single API call.
  */
 @Controller('nft')
-@UseGuards(JwtAuthGuard)
+@Auth()
 export class BatchRoyaltyController {
   private readonly logger = new Logger(BatchRoyaltyController.name);
 
