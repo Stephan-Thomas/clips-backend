@@ -19,6 +19,38 @@ You always stay in control:
 - **Web2 + Web3 in one app** — normal accounts + optional Stellar NFTs with royalties
 - **Simple & beautiful interface** — dark mode, clean design, easy to use
 
+## Key Features
+
+### Content Creation & AI
+- **AI-powered clip detection** — Claude analyzes video content to find the most engaging moments (15–60 seconds each)
+- **Fallback strategies** — if AI fails, uses fixed-chunk splitting to ensure something is always generated
+- **Multi-source support** — upload local video, YouTube, TikTok, or any public video URL
+- **Video metadata extraction** — automatic duration, resolution, quality detection via FFmpeg
+
+### Clip Management
+- **Preview interface** — watch each generated clip before posting
+- **Bulk actions** — select/deselect/delete multiple clips at once
+- **Metadata editing** — customize title, caption, hashtags per clip
+- **Viral scoring** — AI assigns engagement scores to help you pick winners
+
+### Multi-Platform Publishing
+- **One-click posting** — publish to TikTok, Instagram Reels, YouTube Shorts, Facebook Reels, Snapchat, Pinterest, LinkedIn
+- **Platform-specific formatting** — auto-adjust duration, aspect ratio, captions
+- **Scheduled posting** — queue clips to publish at optimal times
+- **Post tracking** — monitor views, likes, comments per platform
+
+### Web3 Integration (Stellar)
+- **Optional NFT minting** — turn clips into NFTs on Stellar's Soroban network
+- **Built-in royalties** — earn a percentage on secondary sales (customizable)
+- **Very low fees** — Stellar transactions cost ~$0.00001 (1 stroops)
+- **User-controlled wallets** — all signing happens in user's browser with Freighter or Albedo
+
+### Revenue & Analytics
+- **Earnings dashboard** — aggregate earnings from all platforms in one place
+- **Payout system** — withdraw earnings in XLM (Stellar lumens) to your wallet
+- **Subscription plans** — flexible tiers (Basic / Pro / Enterprise)
+- **Public leaderboard** (optional) — showcase top creators
+
 ## Main Features (MVP – 2026)
 
 - Upload long video or paste YouTube/TikTok link
@@ -29,17 +61,115 @@ You always stay in control:
 - Optional: mint selected clips as NFTs on Stellar (Soroban smart contracts)
 - Subscription plans + small revenue share (we take 5–10% only if you want)
 
-## Tech Stack – Simple Overview
+## Architecture Overview
 
-| Part           | Technology                          | Why we chose it                     |
-| -------------- | ----------------------------------- | ----------------------------------- |
-| Frontend       | Next.js 15 + React + Tailwind       | Fast, beautiful, mobile-friendly    |
-| Backend        | NestJS (TypeScript)                 | Clean, organized, easy to grow      |
-| Database       | PostgreSQL (via Supabase or Prisma) | Reliable & real-time updates        |
-| Queue / Jobs   | BullMQ + Redis                      | Handles long AI & posting tasks     |
-| Social Posting | Ayrshare                            | One tool posts to all platforms     |
-| Blockchain     | Stellar Soroban (Rust)              | Very cheap fees, built-in royalties |
-| AI             | Runway Gen-3 + Claude               | Finds the most viral moments        |
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Frontend (Next.js + React)                  │
+│              - Video upload / YouTube import UI                 │
+│              - Clip preview & selection                         │
+│              - Multi-platform posting dashboard                 │
+│              - Wallet integration & NFT mint                    │
+└─────────────────────┬───────────────────────────────────────────┘
+                      │ HTTP/WebSocket
+                      ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              Backend API (NestJS + TypeScript)                  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ Controllers:                                             │  │
+│  │ - Auth (login, signup, social OAuth)                    │  │
+│  │ - Videos (upload, list, detect viral moments)           │  │
+│  │ - Clips (preview, select, post, mint as NFT)            │  │
+│  │ - Wallets (connect Stellar)                             │  │
+│  │ - Earnings & Payouts (track, payout to users)           │  │
+│  │ - Queue Dashboard (inspect/retry failed jobs)           │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ Services:                                                │  │
+│  │ - VideoService (AI detection via Claude, FFmpeg)        │  │
+│  │ - ClipsService (CRUD, filter, generate)                 │  │
+│  │ - SocialService (Ayrshare integration)                   │  │
+│  │ - NftMintService (Soroban contract calls)                │  │
+│  │ - PayoutService (Stellar XLM transfers)                  │  │
+│  │ - PrismaService (database abstraction)                   │  │
+│  │ - JWTService (authentication & tokens)                   │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │ Job Queues (BullMQ + Redis):                             │  │
+│  │ - clip-generation (FFmpeg → Cloudinary)                  │  │
+│  │ - clip-posting (post to TikTok, Instagram, etc.)         │  │
+│  │ - nft-mint (Soroban contract interaction)                │  │
+│  │ - email-delivery (transactional emails)                  │  │
+│  │ - payout-retry (Stellar payments)                        │  │
+│  │ - anomaly-detection (fraud detection)                    │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└─────────────────────┬───────────────────────────────────────────┘
+                      │
+         ┌────────────┼────────────┬──────────────┐
+         │            │            │              │
+         ▼            ▼            ▼              ▼
+    ┌────────┐  ┌────────┐  ┌──────────┐  ┌───────────┐
+    │ Redis  │  │   DB   │  │ External │  │ Blockchain
+    │(BullMQ)│  │(Postgres)  │Services  │  │(Stellar)
+    │(Cache) │  │        │  │          │  │
+    └────────┘  └────────┘  └──────────┘  └───────────┘
+                                 │
+            ┌────────────────────┼────────────────────┐
+            │                    │                    │
+            ▼                    ▼                    ▼
+       ┌─────────┐          ┌─────────┐          ┌──────────┐
+       │Ayrshare │          │Cloudinary          │Pinata
+       │(Social  │          │(CDN for            │(IPFS for
+       │Posting) │          │clips/thumbnails)   │metadata)
+       └─────────┘          └─────────┘          └──────────┘
+            │
+    ┌───────┴───────┬────────────┬──────────┬─────────┐
+    │               │            │          │         │
+    ▼               ▼            ▼          ▼         ▼
+┌────────┐   ┌────────────┐ ┌──────┐ ┌──────┐ ┌──────────┐
+│TikTok  │   │Instagram   │ │YouTube│ │Twitter│ │Facebook
+│Reels   │   │Reels       │ │Shorts │ │       │ │Reels
+└────────┘   └────────────┘ └──────┘ └──────┘ └──────────┘
+```
+
+## Tech Stack – Complete Reference
+
+### Core Platform
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Frontend** | Next.js 15, React 19, TypeScript, Tailwind CSS | Modern, responsive UI with SSR |
+| **Backend** | NestJS, TypeScript, Node.js 18+ | Type-safe, modular API server |
+| **Database** | PostgreSQL 14+, Prisma ORM | ACID compliance, schema migrations |
+| **Caching** | Redis 7+ | Session storage, rate limiting, queue backing |
+
+### Async Job Processing
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **Job Queue** | BullMQ | Queue manager with retries and scheduling |
+| **Backing Store** | Redis | Persistent job storage and locking |
+| **Processors** | TypeScript classes | Workers that execute queued jobs |
+
+### External Services & APIs
+
+| Service | Purpose | Key Feature |
+|---------|---------|------------|
+| **Claude / Anthropic SDK** | Analyze videos, detect viral moments | Vision analysis + JSON parsing |
+| **Ayrshare** | Post clips to multiple platforms | Single API for 10+ social networks |
+| **Cloudinary** | Video hosting, CDN, thumbnails | Automatic format conversion |
+| **Pinata** | IPFS storage for NFT metadata | Decentralized metadata hosting |
+| **Stellar Soroban RPC** | Blockchain smart contract calls | NFT minting, XLM transfers |
+| **Freighter / Albedo** | Web3 wallet integration | User-controlled key signing |
+
+### Smart Contracts & Blockchain
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Blockchain** | Stellar Public Network | Low-fee transactions |
+| **Contract Lang** | Soroban (Rust) | Smart contracts for NFT minting |
+| **Token Standard** | Stellar Native XLM | User payouts in XLM |
+| **NFT Implementation** | Soroban contract | Customizable royalties & metadata |
 
 ## Getting Started
 
