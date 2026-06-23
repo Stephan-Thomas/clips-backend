@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
 import { JwtModule } from '@nestjs/jwt';
 import { ClipsController } from './clips.controller';
 import { ClipsService } from './clips.service';
@@ -20,6 +19,7 @@ import { ClipPublishService } from './clip-publish.service';
 import { RedisModule } from '../redis/redis.module';
 import { QueueRateLimitGuard } from '../common/guards/queue-rate-limit.guard';
 import { UserPlatformModule } from '../user-platform/user-platform.module';
+import { registerQueue } from '../common';
 
 @Module({
   imports: [
@@ -28,14 +28,8 @@ import { UserPlatformModule } from '../user-platform/user-platform.module';
      * Concurrency is kept low (default 1) so the worker doesn't saturate the host.
      * Configured via the @Processor decorator on ClipGenerationProcessor.
      */
-    BullModule.registerQueue({
-      name: CLIP_GENERATION_QUEUE,
-      defaultJobOptions: { priority: CLIP_GENERATION_QUEUE_PRIORITY },
-    }),
-    BullModule.registerQueue({
-      name: NFT_MINT_QUEUE,
-      defaultJobOptions: { priority: NFT_MINT_QUEUE_PRIORITY },
-    }),
+    registerQueue(CLIP_GENERATION_QUEUE),
+    registerQueue(NFT_MINT_QUEUE),
     PrismaModule,
     StellarModule,
     CircuitBreakerModule,
@@ -47,10 +41,7 @@ import { UserPlatformModule } from '../user-platform/user-platform.module';
      * on network responses, not consuming CPU/memory.
      * Concurrency is configured via the @Processor decorator on ClipPostingProcessor.
      */
-    BullModule.registerQueue({
-      name: CLIP_POSTING_QUEUE,
-      defaultJobOptions: { priority: CLIP_POSTING_QUEUE_PRIORITY },
-    }),
+    registerQueue(CLIP_POSTING_QUEUE),
 
     PrismaModule,
     StellarModule,
