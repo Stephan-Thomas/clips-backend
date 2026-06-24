@@ -6,6 +6,9 @@ import { JobFailureNotifierService } from './job-failure-notifier.service';
 import { CLIP_GENERATION_QUEUE } from '../clips/clip-generation.queue';
 import { CLIP_POSTING_QUEUE } from '../clips/clip-posting.queue';
 import { PAYOUT_RETRY_QUEUE } from '../payouts/payout-retry.queue';
+import { NFT_MINT_QUEUE } from '../clips/nft-mint.queue';
+import { ANOMALY_DETECTION_QUEUE } from '../earnings/anomaly-detection.queue';
+import { EMAIL_DELIVERY_QUEUE } from '../auth/email-delivery.queue';
 import { AuthModule } from '../auth/auth.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -15,6 +18,9 @@ import { PrismaModule } from '../prisma/prisma.module';
       { name: CLIP_GENERATION_QUEUE },
       { name: CLIP_POSTING_QUEUE },
       { name: PAYOUT_RETRY_QUEUE },
+      { name: NFT_MINT_QUEUE },
+      { name: ANOMALY_DETECTION_QUEUE },
+      { name: EMAIL_DELIVERY_QUEUE },
     ),
     AuthModule,
     PrismaModule,

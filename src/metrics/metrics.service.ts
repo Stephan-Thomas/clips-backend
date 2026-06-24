@@ -68,6 +68,10 @@ export class MetricsService {
     this.registry.registerMetric(queueMetricsData.jobFailures);
     this.registry.registerMetric(queueMetricsData.jobCompletions);
     this.registry.registerMetric(queueMetricsData.jobRetryRate);
+    this.registry.registerMetric(queueMetricsData.workerMemoryRss);
+    this.registry.registerMetric(queueMetricsData.workerMemoryHeapTotal);
+    this.registry.registerMetric(queueMetricsData.workerMemoryHeapUsed);
+    this.registry.registerMetric(queueMetricsData.workerMemoryExternal);
   }
 
   incrementClipsGenerated(status: 'success' | 'failure'): void {

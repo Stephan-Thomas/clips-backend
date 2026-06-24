@@ -1,9 +1,8 @@
-import { Controller, Get, Req, Res, Next, Query } from '@nestjs/common';
+import { Controller, Get, Req, Res, Next, Post, Body, BadRequestException } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
 import { Auth } from '../auth/decorators/auth.decorator';
 import { QueueDashboardService } from './queue-dashboard.service';
-import { QueueCollectorService } from '../metrics/queue-collector.service';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 
 @ApiTags('queues')
 @ApiBearerAuth('access-token')
@@ -25,10 +24,35 @@ export class QueueDashboardController {
     return router(req, res, next);
   }
 
-  @Get('stats')
-  @ApiOperation({ summary: 'Get queue statistics', description: 'Get active, waiting, and failed jobs per queue' })
-  @ApiQuery({ name: 'queue', required: false, description: 'Specific queue name (optional)', type: String })
-  async getQueueStats(@Query('queue') queue?: string) {
-    return this.queueCollectorService.getQueueStats(queue);
+  @Post('pause')
+  @ApiOperation({ summary: 'Pause queue processing', description: 'Pause a specific queue or all queues' })
+  async pause(@Body() body: { queue?: string }) {
+    if (body.queue) {
+      try {
+        await this.queueDashboardService.pauseQueue(body.queue);
+        return { message: `Queue ${body.queue} paused successfully` };
+      } catch (error) {
+        throw new BadRequestException(error.message);
+      }
+    } else {
+      await this.queueDashboardService.pauseAllQueues();
+      return { message: 'All queues paused successfully' };
+    }
+  }
+
+  @Post('resume')
+  @ApiOperation({ summary: 'Resume queue processing', description: 'Resume a specific queue or all queues' })
+  async resume(@Body() body: { queue?: string }) {
+    if (body.queue) {
+      try {
+        await this.queueDashboardService.resumeQueue(body.queue);
+        return { message: `Queue ${body.queue} resumed successfully` };
+      } catch (error) {
+        throw new BadRequestException(error.message);
+      }
+    } else {
+      await this.queueDashboardService.resumeAllQueues();
+      return { message: 'All queues resumed successfully' };
+    }
   }
 }
