@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { EarningsService } from './earnings.service';
 import { EarningsAggregationService } from './earnings-aggregation.service';
 import { EarningsExportService } from './earnings-export.service';
-import { TaxReportExportService } from './tax-report-export.service';
+import { EarningsMetricsService } from './earnings-metrics.service';
 import { EarningsController } from './earnings.controller';
 import { AdminAnomaliesController } from './admin.controller';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -27,7 +27,7 @@ import { registerQueue } from '../common';
     EarningsService,
     EarningsAggregationService,
     EarningsExportService,
-    TaxReportExportService,
+    EarningsMetricsService,
     AnomalyDetectionService,
     AnomalyDetectionProcessor,
     CurrencyConversionService,
@@ -37,7 +37,7 @@ import { registerQueue } from '../common';
     EarningsService,
     EarningsAggregationService,
     EarningsExportService,
-    TaxReportExportService,
+    EarningsMetricsService,
     AnomalyDetectionService,
     CurrencyConversionService,
   ],

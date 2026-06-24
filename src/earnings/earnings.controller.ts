@@ -24,29 +24,12 @@ interface RequestWithUser extends Request {
 export class EarningsController {
   constructor(private readonly earningsService: EarningsService) {}
 
-  @Get('tax-report')
-  async exportTaxReport(
+  @Get('metrics')
+  async getDashboardMetrics(
     @Req() req: RequestWithUser,
-    @Res() res: Response,
-    @Query('year') year = String(new Date().getFullYear()),
-    @Query('format') format = 'csv',
+    @Query('currency') currency: Currency = Currency.USD,
   ) {
-    if (format !== 'csv') {
-      throw new BadRequestException('Only format=csv is supported');
-    }
-
-    const parsedYear = parseInt(year, 10);
-    const { filename, content } = await this.earningsService.exportTaxReportCsv(
-      req.user.userId,
-      parsedYear,
-    );
-
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${filename}"`,
-    );
-    res.send(content);
+    return this.earningsService.getDashboardMetrics(req.user.userId, currency);
   }
 
   @Get('export')
@@ -114,4 +97,12 @@ export class EarningsController {
   async getEarningsByPlatform(@Req() req: RequestWithUser) {
     return this.earningsService.getEarningsByPlatform(req.user.userId);
   }
+  @Get('summary')
+  async getEarningsSummary(
+    @Req() req: RequestWithUser,
+    @Query('currency') currency: Currency = Currency.USD,
+  ) {
+    return this.earningsService.getEarningsSummary(req.user.userId, currency);
+  }
+
 }

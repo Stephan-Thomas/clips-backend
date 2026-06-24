@@ -15,6 +15,7 @@ import { EncryptionModule } from '../encryption/encryption.module';
 import { MetricsModule } from '../metrics/metrics.module';
 import { PayoutRetryProcessor } from './payout-retry.processor';
 import { PAYOUT_RETRY_QUEUE, PAYOUT_RETRY_QUEUE_PRIORITY } from './payout-retry.queue';
+import { PayoutApprovalService } from './payout-approval.service';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { PAYOUT_RETRY_QUEUE, PAYOUT_RETRY_QUEUE_PRIORITY } from './payout-retry.
     FeeService,
     PayoutMethodService,
     PayoutRetryProcessor,
+    PayoutApprovalService,
   ],
   exports: [PayoutsService, FeeService, PayoutMethodService],
 })
