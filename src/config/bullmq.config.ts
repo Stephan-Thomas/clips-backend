@@ -24,6 +24,43 @@ export interface BullMQWorkerConfig {
 }
 
 /**
+ * Per-queue rate limit and overflow configuration.
+ *
+ * Rate limiting prevents a single queue from being flooded during traffic spikes:
+ *   - maxJobsPerUser / windowSecs  — per-user enqueue cap (Redis sliding window)
+ *   - globalDepthCap               — total waiting+active jobs allowed before overflow kicks in
+ *   - overflowDelayMs              — delay added to jobs when the queue is over capacity
+ *                                    (0 = reject immediately with 429 instead of delaying)
+ */
+export interface QueueRateLimitConfig {
+  /** Max jobs a single user may enqueue within windowSecs. Env-configurable. */
+  maxJobsPerUser: number;
+  /** Sliding window duration in seconds for the per-user cap. */
+  windowSecs: number;
+  /**
+   * Maximum total jobs (waiting + active + delayed) allowed in the queue
+   * before new jobs are delayed instead of enqueued immediately.
+   * 0 disables the global depth cap.
+   */
+  globalDepthCap: number;
+  /**
+   * How long to delay a job (ms) when the queue is over its globalDepthCap.
+   * Set to 0 to reject excess jobs with HTTP 429 instead of delaying them.
+   */
+  overflowDelayMs: number;
+}
+
+export interface BullMQFullConfig {
+  worker: BullMQWorkerConfig;
+  rateLimits: {
+    clipGeneration: QueueRateLimitConfig;
+    emailDelivery: QueueRateLimitConfig;
+    nftMint: QueueRateLimitConfig;
+    clipPosting: QueueRateLimitConfig;
+  };
+}
+
+/**
  * Load BullMQ worker configuration from environment variables
  * with sensible defaults for each queue type.
  */
@@ -41,6 +78,68 @@ export function getBullMQWorkerConfig(
       configService.get<string>('BULLMQ_EMAIL_DELIVERY_CONCURRENCY', '5'),
       10,
     ),
+  };
+}
+
+/**
+ * Load per-queue rate limit and overflow configuration from environment variables.
+ *
+ * All values are configurable without code changes:
+ *
+ *   BULLMQ_{QUEUE}_MAX_JOBS_PER_USER    — per-user enqueue cap
+ *   BULLMQ_{QUEUE}_RATE_WINDOW_SECS     — sliding window for the user cap
+ *   BULLMQ_{QUEUE}_GLOBAL_DEPTH_CAP     — total queue depth before overflow
+ *   BULLMQ_{QUEUE}_OVERFLOW_DELAY_MS    — delay added to overflowed jobs (0 = reject)
+ *
+ * where {QUEUE} is one of: CLIP_GENERATION, EMAIL_DELIVERY, NFT_MINT, CLIP_POSTING.
+ */
+export function getBullMQRateLimitConfig(
+  configService: ConfigService,
+): BullMQFullConfig['rateLimits'] {
+  const load = (prefix: string, defaults: QueueRateLimitConfig): QueueRateLimitConfig => ({
+    maxJobsPerUser: parseInt(
+      configService.get<string>(`BULLMQ_${prefix}_MAX_JOBS_PER_USER`, String(defaults.maxJobsPerUser)),
+      10,
+    ),
+    windowSecs: parseInt(
+      configService.get<string>(`BULLMQ_${prefix}_RATE_WINDOW_SECS`, String(defaults.windowSecs)),
+      10,
+    ),
+    globalDepthCap: parseInt(
+      configService.get<string>(`BULLMQ_${prefix}_GLOBAL_DEPTH_CAP`, String(defaults.globalDepthCap)),
+      10,
+    ),
+    overflowDelayMs: parseInt(
+      configService.get<string>(`BULLMQ_${prefix}_OVERFLOW_DELAY_MS`, String(defaults.overflowDelayMs)),
+      10,
+    ),
+  });
+
+  return {
+    clipGeneration: load('CLIP_GENERATION', {
+      maxJobsPerUser: 5,
+      windowSecs: 3600,      // 1 hour
+      globalDepthCap: 200,   // >200 waiting/active → overflow
+      overflowDelayMs: 30000, // delay new jobs by 30 s when over capacity
+    }),
+    emailDelivery: load('EMAIL_DELIVERY', {
+      maxJobsPerUser: 10,
+      windowSecs: 3600,
+      globalDepthCap: 500,
+      overflowDelayMs: 10000, // emails are lightweight — shorter delay
+    }),
+    nftMint: load('NFT_MINT', {
+      maxJobsPerUser: 3,
+      windowSecs: 3600,
+      globalDepthCap: 100,
+      overflowDelayMs: 60000, // blockchain txs take time — longer delay
+    }),
+    clipPosting: load('CLIP_POSTING', {
+      maxJobsPerUser: 10,
+      windowSecs: 3600,
+      globalDepthCap: 300,
+      overflowDelayMs: 15000,
+    }),
   };
 }
 
@@ -76,6 +175,40 @@ export function validateWorkerConfig(config: BullMQWorkerConfig): void {
   if (errors.length > 0) {
     throw new Error(
       `Invalid BullMQ worker configuration:\n${errors.join('\n')}`,
+    );
+  }
+}
+
+/**
+ * Validate rate limit configuration values.
+ * Catches obviously wrong values (negatives, unreasonably large windows, etc.)
+ */
+export function validateRateLimitConfig(
+  config: BullMQFullConfig['rateLimits'],
+): void {
+  const errors: string[] = [];
+
+  for (const [name, cfg] of Object.entries(config)) {
+    if (cfg.maxJobsPerUser < 1) {
+      errors.push(`${name}: maxJobsPerUser must be at least 1`);
+    }
+    if (cfg.windowSecs < 1) {
+      errors.push(`${name}: windowSecs must be at least 1`);
+    }
+    if (cfg.globalDepthCap < 0) {
+      errors.push(`${name}: globalDepthCap cannot be negative`);
+    }
+    if (cfg.overflowDelayMs < 0) {
+      errors.push(`${name}: overflowDelayMs cannot be negative`);
+    }
+    if (cfg.overflowDelayMs > 24 * 60 * 60 * 1000) {
+      errors.push(`${name}: overflowDelayMs cannot exceed 24 hours`);
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(
+      `Invalid BullMQ rate limit configuration:\n${errors.join('\n')}`,
     );
   }
 }

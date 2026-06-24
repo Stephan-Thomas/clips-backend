@@ -7,6 +7,7 @@ import {
   CLIP_GENERATION_QUEUE,
   CLIP_GENERATION_QUEUE_PRIORITY,
 } from '../clips/clip-generation.queue';
+import { RedisModule } from '../redis/redis.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import {
       name: CLIP_GENERATION_QUEUE,
       defaultJobOptions: { priority: CLIP_GENERATION_QUEUE_PRIORITY },
     }),
+    RedisModule,
   ],
   controllers: [JobsController],
   providers: [JobsService, QueueCleanupService],

@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, OnModuleInit } from '@nestjs/common';
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
@@ -6,6 +6,7 @@ import { AyrshareService } from './ayrshare.service';
 import { UserPlatformService } from '../user-platform/user-platform.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { CLIP_POSTING_QUEUE, type ClipPostingJob } from './clip-posting.queue';
+import { GracefulShutdownService } from '../common/shutdown/graceful-shutdown.service';
 
 /**
  * BullMQ processor for clip-posting jobs.
@@ -27,7 +28,7 @@ import { CLIP_POSTING_QUEUE, type ClipPostingJob } from './clip-posting.queue';
 @Processor(CLIP_POSTING_QUEUE, {
   concurrency: 10,
 })
-export class ClipPostingProcessor extends WorkerHost {
+export class ClipPostingProcessor extends WorkerHost implements OnModuleInit {
   private readonly logger = new Logger(ClipPostingProcessor.name);
 
   constructor(
@@ -35,8 +36,13 @@ export class ClipPostingProcessor extends WorkerHost {
     private readonly ayrshare: AyrshareService,
     private readonly userPlatformService: UserPlatformService,
     private readonly metricsService: MetricsService,
+    private readonly shutdownService: GracefulShutdownService,
   ) {
     super();
+  }
+
+  onModuleInit(): void {
+    this.shutdownService.register(this.worker);
   }
 
   /**

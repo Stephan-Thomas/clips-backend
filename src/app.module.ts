@@ -31,6 +31,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { HealthModule } from './health/health.module';
 import { QueueDashboardModule } from './queue-dashboard/queue-dashboard.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { GracefulShutdownModule } from './common/shutdown/graceful-shutdown.module';
 
 @Module({
   imports: [
@@ -126,6 +127,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     TransactionsModule,
     HealthModule,
     QueueDashboardModule,
+    GracefulShutdownModule,
   ],
   controllers: [AppController],
   providers: [
