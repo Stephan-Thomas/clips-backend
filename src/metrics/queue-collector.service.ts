@@ -5,6 +5,9 @@ import { QueueMetricsService } from './queue-metrics.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { Optional } from '@nestjs/common';
 
+/** Memory alert threshold (in bytes, default 1 GB) */
+const MEMORY_ALERT_THRESHOLD_BYTES = 1 * 1024 * 1024 * 1024;
+
 /**
  * QueueCollectorService periodically collects metrics from all BullMQ queues.
  *
@@ -13,6 +16,7 @@ import { Optional } from '@nestjs/common';
  *   - Polls queue stats every 30 seconds
  *   - Records metrics via QueueMetricsService
  *   - Handles queue unavailability gracefully
+ *   - Tracks worker memory usage and alerts on high memory
  */
 @Injectable()
 export class QueueCollectorService implements OnModuleInit, OnModuleDestroy {
@@ -77,6 +81,39 @@ export class QueueCollectorService implements OnModuleInit, OnModuleDestroy {
   @Interval(30000)
   async collectMetrics(): Promise<void> {
     try {
+      // Collect worker memory usage
+      const memoryUsage = process.memoryUsage();
+      this.queueMetrics.recordWorkerMemoryUsage(memoryUsage);
+
+      // Format memory for logging
+      const formatBytes = (bytes: number): string => {
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let i = 0;
+        while (bytes >= 1024 && i < units.length - 1) {
+          bytes /= 1024;
+          i++;
+        }
+        return `${bytes.toFixed(2)} ${units[i]}`;
+      };
+
+      const memoryLogPayload = {
+        rss: formatBytes(memoryUsage.rss),
+        heapTotal: formatBytes(memoryUsage.heapTotal),
+        heapUsed: formatBytes(memoryUsage.heapUsed),
+        external: formatBytes(memoryUsage.external),
+      };
+
+      // Check for memory threshold alert
+      if (memoryUsage.rss > MEMORY_ALERT_THRESHOLD_BYTES) {
+        this.logger.warn('Worker memory usage above alert threshold', {
+          ...memoryLogPayload,
+          threshold: formatBytes(MEMORY_ALERT_THRESHOLD_BYTES),
+        });
+      } else {
+        this.logger.debug('Worker memory stats', memoryLogPayload);
+      }
+
+      // Collect queue metrics
       for (const [queueName, queue] of this.registeredQueues) {
         try {
           const counts = await queue.getJobCounts(
@@ -90,14 +127,28 @@ export class QueueCollectorService implements OnModuleInit, OnModuleDestroy {
 
           this.queueMetrics.recordQueueCounts(queueName, counts);
 
-          // Calculate average retry count
+          // Aggregate retry counts and failure reasons from the last 100 failed jobs
           const failedJobs = await queue.getFailed(0, 100);
+
+          const totalRetries = failedJobs.reduce(
+            (sum, job) => sum + (job.attemptsMade || 0),
+            0,
+          );
           const avgRetries =
-            failedJobs.length > 0
-              ? failedJobs.reduce((sum, job) => sum + (job.attemptsMade || 0), 0) /
-                failedJobs.length
-              : 0;
+            failedJobs.length > 0 ? totalRetries / failedJobs.length : 0;
           this.queueMetrics.recordAvgRetryCount(queueName, avgRetries);
+
+          // Count occurrences of each failure reason and record them
+          const reasonCounts = new Map<string, number>();
+          for (const job of failedJobs) {
+            const reason = job.failedReason ?? 'unknown';
+            // Normalise: strip long stack details, keep first line only
+            const key = reason.split('\n')[0].slice(0, 120);
+            reasonCounts.set(key, (reasonCounts.get(key) ?? 0) + 1);
+          }
+          for (const [reason, count] of reasonCounts) {
+            this.queueMetrics.recordFailureReasonCount(queueName, reason, count);
+          }
 
           this.logger.debug(
             `Queue metrics [${queueName}]: waiting=${counts.waiting}, active=${counts.active}, ` +
@@ -121,5 +172,37 @@ export class QueueCollectorService implements OnModuleInit, OnModuleDestroy {
    */
   getRegisteredQueues(): string[] {
     return Array.from(this.registeredQueues.keys());
+  }
+
+  /**
+   * Get queue statistics (active, waiting, failed jobs).
+   * If queueName is provided, returns stats for that specific queue.
+   * Otherwise returns stats for all registered queues.
+   */
+  async getQueueStats(queueName?: string): Promise<Record<string, { active: number; waiting: number; failed: number }>> {
+    const stats: Record<string, { active: number; waiting: number; failed: number }> = {};
+
+    const queuesToCheck = queueName
+      ? [[queueName, this.registeredQueues.get(queueName)]]
+      : Array.from(this.registeredQueues.entries());
+
+    for (const [name, queue] of queuesToCheck) {
+      if (!queue) {
+        continue;
+      }
+      try {
+        const counts = await queue.getJobCounts('active', 'waiting', 'failed');
+        stats[name] = {
+          active: counts.active ?? 0,
+          waiting: counts.waiting ?? 0,
+          failed: counts.failed ?? 0
+        };
+      } catch (err) {
+        this.logger.error(`Failed to get stats for queue ${name}: ${err instanceof Error ? err.message : String(err)}`);
+        stats[name] = { active: 0, waiting: 0, failed: 0 };
+      }
+    }
+
+    return stats;
   }
 }

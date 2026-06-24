@@ -1,11 +1,13 @@
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import { AnomalyDetectionService } from './anomaly-detection.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { ANOMALY_DETECTION_QUEUE } from './anomaly-detection.queue';
 import { MailService } from '../auth/mail.service';
 import { GracefulShutdownService } from '../common/shutdown/graceful-shutdown.service';
+import { getBullMQWorkerConfig } from '../config/bullmq.config';
 
 interface AnomalyDetectionJob {
   earningId: number;
@@ -19,7 +21,9 @@ interface AnomalyDetectionJob {
  *  - GracefulShutdownService can drain in-flight jobs before the process exits.
  *  - @OnWorkerEvent handlers are available for structured failure logging.
  */
-@Processor(ANOMALY_DETECTION_QUEUE)
+@Processor(ANOMALY_DETECTION_QUEUE, {
+  concurrency: getBullMQWorkerConfig(new ConfigService()).anomalyDetectionConcurrency,
+})
 export class AnomalyDetectionProcessor extends WorkerHost {
   private readonly logger = new Logger(AnomalyDetectionProcessor.name);
 

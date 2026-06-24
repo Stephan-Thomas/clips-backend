@@ -13,6 +13,7 @@ import { StellarService } from '../stellar/stellar.service';
 import { PayoutReceiptService } from './payout-receipt.service';
 import { FeeService } from './fee.service';
 import { PAYOUT_RETRY_QUEUE } from './payout-retry.queue';
+import { PayoutApprovalService } from './payout-approval.service';
 import {
   ConflictException,
   BadRequestException,
@@ -58,6 +59,14 @@ describe('PayoutsService', () => {
     }),
   };
 
+  const mockPayoutApprovalService = {
+    resolveInitialStatus: jest.fn((amount: number) =>
+      amount >= 500 ? 'pending_approval' : 'approved',
+    ),
+    requiresManualApproval: jest.fn((amount: number) => amount >= 500),
+    getApprovalThreshold: jest.fn(() => 500),
+  };
+
   const mockPayoutRetryQueue = {
     add: jest.fn(),
   };
@@ -86,6 +95,10 @@ describe('PayoutsService', () => {
         {
           provide: FeeService,
           useValue: mockFeeService,
+        },
+        {
+          provide: PayoutApprovalService,
+          useValue: mockPayoutApprovalService,
         },
         {
           provide: getQueueToken(PAYOUT_RETRY_QUEUE),
@@ -147,7 +160,7 @@ describe('PayoutsService', () => {
       mockPrismaService.payout.create.mockResolvedValue({
         id: 9,
         amount: 3,
-        status: 'pending',
+        status: 'approved',
         createdAt: new Date(),
         feeAmount: 0,
         finalAmount: 3,
@@ -158,7 +171,11 @@ describe('PayoutsService', () => {
       expect(mockFeeService.calculateFee).toHaveBeenCalledWith(3, 'stellar');
       expect(mockPrismaService.payout.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ amount: 3, currency: 'USD' }),
+          data: expect.objectContaining({
+            amount: 3,
+            currency: 'USD',
+            status: 'approved',
+          }),
         }),
       );
       expect(result.amount).toBe(3);
@@ -184,7 +201,7 @@ describe('PayoutsService', () => {
       mockPrismaService.payout.create.mockResolvedValue({
         id: 9,
         amount: 20000,
-        status: 'pending',
+        status: 'pending_approval',
         createdAt: new Date(),
         feeAmount: 100,
         finalAmount: 19900,
@@ -195,7 +212,11 @@ describe('PayoutsService', () => {
       expect(mockFeeService.calculateFee).toHaveBeenCalledWith(20000, 'stellar');
       expect(mockPrismaService.payout.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ amount: 20000, currency: 'USD' }),
+          data: expect.objectContaining({
+            amount: 20000,
+            currency: 'USD',
+            status: 'pending_approval',
+          }),
         }),
       );
       expect(result.amount).toBe(20000);
@@ -285,7 +306,7 @@ describe('PayoutsService', () => {
     it('should throw InternalServerErrorException if STELLAR_PLATFORM_SECRET not set', async () => {
       mockPrismaService.payout.findUnique.mockResolvedValue({
         id: 1,
-        status: 'pending',
+        status: 'approved',
         wallet: { address: 'GTEST...' },
       });
 

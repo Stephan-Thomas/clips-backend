@@ -14,6 +14,7 @@ import {
  *   - Job processing time (duration histogram)
  *   - Job failure rate
  *   - Job completion time by queue
+ *   - Worker memory usage (rss, heap total, heap used)
  */
 @Injectable()
 export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
@@ -53,6 +54,13 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
     name: 'clipcash_queue_job_retry_count',
     help: 'Average retry count for jobs by queue',
     labelNames: ['queue'],
+  });
+
+  // Gauge: failure reason counts by queue and reason
+  private readonly jobFailureReasons = new Gauge({
+    name: 'clipcash_queue_failure_reason_count',
+    help: 'Number of failed jobs by queue and failure reason (sampled from last 100 failed jobs)',
+    labelNames: ['queue', 'reason'],
   });
 
   // Map to track job start times for duration calculation
@@ -147,6 +155,17 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Record failure reason counts for a queue (sampled from failed job list).
+   *
+   * @param queue Queue name
+   * @param reason Normalised failure reason string
+   * @param count Number of jobs with this reason in the current sample
+   */
+  recordFailureReasonCount(queue: string, reason: string, count: number): void {
+    this.jobFailureReasons.set({ queue, reason }, count);
+  }
+
+  /**
    * Get all metrics registered in this service.
    * Returns the metrics in Prometheus format.
    *
@@ -158,6 +177,7 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
     jobFailures: Counter;
     jobCompletions: Counter;
     jobRetryRate: Gauge;
+    jobFailureReasons: Gauge;
   } {
     return {
       jobCount: this.jobCount,
@@ -165,6 +185,7 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
       jobFailures: this.jobFailures,
       jobCompletions: this.jobCompletions,
       jobRetryRate: this.jobRetryRate,
+      jobFailureReasons: this.jobFailureReasons,
     };
   }
 

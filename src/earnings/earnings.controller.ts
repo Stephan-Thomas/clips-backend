@@ -97,4 +97,12 @@ export class EarningsController {
   async getEarningsByPlatform(@Req() req: RequestWithUser) {
     return this.earningsService.getEarningsByPlatform(req.user.userId);
   }
+  @Get('summary')
+  async getEarningsSummary(
+    @Req() req: RequestWithUser,
+    @Query('currency') currency: Currency = Currency.USD,
+  ) {
+    return this.earningsService.getEarningsSummary(req.user.userId, currency);
+  }
+
 }
