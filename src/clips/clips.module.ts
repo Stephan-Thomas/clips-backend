@@ -1,18 +1,17 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { registerQueue } from '../common';
 import { ClipsController } from './clips.controller';
 import { ClipsService } from './clips.service';
 import { ClipGenerationProcessor } from './clip-generation.processor';
 import { CloudinaryService } from './cloudinary.service';
 import {
   CLIP_GENERATION_QUEUE,
-  CLIP_GENERATION_QUEUE_PRIORITY,
 } from './clip-generation.queue';
-import { NFT_MINT_QUEUE, NFT_MINT_QUEUE_PRIORITY } from './nft-mint.queue';
+import { NFT_MINT_QUEUE } from './nft-mint.queue';
 import { NftMintProcessor } from './nft-mint.processor';
 import {
   CLIP_POSTING_QUEUE,
-  CLIP_POSTING_QUEUE_PRIORITY,
 } from './clip-posting.queue';
 import { ClipPostingProcessor } from './clip-posting.processor';
 import { ClipsGateway } from './clips.gateway';
