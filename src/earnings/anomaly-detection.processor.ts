@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { AnomalyDetectionService } from './anomaly-detection.service';
@@ -30,9 +30,6 @@ export class AnomalyDetectionProcessor extends WorkerHost {
   ) {
     super();
   }
-
-  async process(job: Job<AnomalyDetectionJob>): Promise<void> {
-    const { earningId } = job.data;
 
   async process(job: Job<AnomalyDetectionJob>): Promise<void> {
     const { earningId } = job.data;
