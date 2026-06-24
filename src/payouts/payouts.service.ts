@@ -12,7 +12,7 @@ import * as StellarSdk from '@stellar/stellar-sdk';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarService } from '../stellar/stellar.service';
 import { PayoutReceiptService } from './payout-receipt.service';
-import { FeeService } from './fee.service';
+import { EarningsService } from '../earnings/earnings.service';
 import { PAYOUT_RETRY_QUEUE, MAX_PAYOUT_RETRIES, PAYOUT_RETRY_BACKOFF_BASE } from './payout-retry.queue';
 
 @Injectable()
@@ -24,6 +24,7 @@ export class PayoutsService {
 
   constructor(
     private prisma: PrismaService,
+    private earningsService: EarningsService,
     private stellarService: StellarService,
     private payoutReceiptService: PayoutReceiptService,
     private feeService: FeeService,
