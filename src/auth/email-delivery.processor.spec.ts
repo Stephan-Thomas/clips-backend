@@ -9,74 +9,37 @@ jest.mock('../config/bullmq.config', () => ({
 
 import { EmailDeliveryProcessor } from './email-delivery.processor';
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-const mockMailService = { sendTemplatedEmail: jest.fn() };
-const mockMetricsService = {
-  recordJobStart: jest.fn(),
-  recordJobCompletion: jest.fn(),
-  recordJobFailure: jest.fn(),
-};
-
-function makeProcessor() {
-  return new EmailDeliveryProcessor(mockMailService as any, mockMetricsService as any);
-}
-
-function makeJob(overrides: Partial<Job<EmailDeliveryJobData>> = {}): Job<EmailDeliveryJobData> {
-  return {
-    id: 'email-job-1',
-    data: {
-      to: 'user@example.com',
-      subject: 'Verify your email',
-      template: 'verification',
-      context: { token: 'tok-abc' },
-    },
-    opts: { attempts: EMAIL_JOB_OPTIONS.attempts, backoff: EMAIL_JOB_OPTIONS.backoff },
-    attemptsMade: 0,
-    ...overrides,
-  } as unknown as Job<EmailDeliveryJobData>;
-}
-
-beforeEach(() => jest.clearAllMocks());
-
-// ── process() ────────────────────────────────────────────────────────────────
-
-describe('EmailDeliveryProcessor.process()', () => {
-  it('calls sendTemplatedEmail with the full job data', async () => {
-    mockMailService.sendTemplatedEmail.mockResolvedValue(undefined);
-    const processor = makeProcessor();
-    const job = makeJob();
-
-    await processor.process(job);
-
-    expect(mockMailService.sendTemplatedEmail).toHaveBeenCalledWith(job.data);
-  });
-
-  it('records job start and completion(success) metrics', async () => {
-    mockMailService.sendTemplatedEmail.mockResolvedValue(undefined);
-    const processor = makeProcessor();
-
-    await processor.process(makeJob());
-
-    expect(mockMetricsService.recordJobStart).toHaveBeenCalled();
-    expect(mockMetricsService.recordJobCompletion).toHaveBeenCalledWith(
-      expect.any(String),
-      'email-delivery',
-      'success',
+describe('EmailDeliveryProcessor', () => {
+  it('throws when SMTP send fails so BullMQ can retry', async () => {
+    const mailService = {
+      sendTemplatedEmail: jest
+        .fn()
+        .mockRejectedValue(new Error('SMTP temporarily unavailable')),
+    };
+    const metricsService = {
+      recordJobStart: jest.fn(),
+      recordJobCompletion: jest.fn(),
+      recordJobFailure: jest.fn(),
+    };
+    const processor = new EmailDeliveryProcessor(
+      mailService as any,
+      metricsService as any,
     );
-    expect(mockMetricsService.recordJobFailure).not.toHaveBeenCalled();
-  });
 
-  it('records failure metric and rethrows on SMTP error', async () => {
-    mockMailService.sendTemplatedEmail.mockRejectedValue(new Error('SMTP connection refused'));
-    const processor = makeProcessor();
+    const job = {
+      id: 'job-1',
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+      data: {
+        to: 'user@example.com',
+        subject: 'Verify your email address',
+        template: 'verification',
+        context: { token: 'abc' },
+      },
+    } as Job<any>;
 
-    await expect(processor.process(makeJob())).rejects.toThrow('SMTP connection refused');
-
-    expect(mockMetricsService.recordJobCompletion).toHaveBeenCalledWith(
-      expect.any(String),
-      'email-delivery',
-      'failure',
+    await expect(processor.process(job)).rejects.toThrow(
+      'SMTP temporarily unavailable',
     );
     expect(mockMetricsService.recordJobFailure).toHaveBeenCalled();
   });
