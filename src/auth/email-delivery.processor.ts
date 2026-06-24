@@ -27,7 +27,7 @@ export class EmailDeliveryProcessor extends WorkerHost {
     private readonly metricsService: MetricsService,
   ) {
     super();
-    const config = getBullMQWorkerConfig(configService);
+    const config = getBullMQWorkerConfig(new ConfigService());
     this.logger.log(
       `Email delivery worker initialized with concurrency: ${config.emailDeliveryConcurrency}`,
     );
