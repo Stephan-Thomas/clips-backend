@@ -2,13 +2,10 @@ import { Job } from 'bullmq';
 import { AnomalyDetectionProcessor } from './anomaly-detection.processor';
 import { ANOMALY_DETECTION_QUEUE } from './anomaly-detection.queue';
 
-// Mock missing modules before processor imports resolve them
 jest.mock('../metrics/metrics.service', () => ({ MetricsService: class {} }));
 
-// ── mocks ─────────────────────────────────────────────────────────────────────
-
 const mockAnomalyDetectionService = { detectAnomalies: jest.fn() };
-const mockMailService = { sendMail: jest.fn() };
+const mockMailService = { sendEmail: jest.fn() };
 const mockMetricsService = {
   recordJobStart: jest.fn(),
   recordJobCompletion: jest.fn(),
@@ -37,14 +34,12 @@ beforeEach(() => {
   delete process.env.ADMIN_EMAILS;
 });
 
-// ── handleAnomalyDetection() ──────────────────────────────────────────────────
-
-describe('AnomalyDetectionProcessor.handleAnomalyDetection()', () => {
+describe('AnomalyDetectionProcessor.process()', () => {
   it('calls detectAnomalies with the earningId from job data', async () => {
     mockAnomalyDetectionService.detectAnomalies.mockResolvedValue({ isAnomaly: false });
     const processor = makeProcessor();
 
-    await processor.handleAnomalyDetection(makeJob(99));
+    await processor.process(makeJob(99));
 
     expect(mockAnomalyDetectionService.detectAnomalies).toHaveBeenCalledWith(99);
   });
@@ -53,7 +48,7 @@ describe('AnomalyDetectionProcessor.handleAnomalyDetection()', () => {
     mockAnomalyDetectionService.detectAnomalies.mockResolvedValue({ isAnomaly: false });
     const processor = makeProcessor();
 
-    await processor.handleAnomalyDetection(makeJob());
+    await processor.process(makeJob());
 
     expect(mockMetricsService.recordJobStart).toHaveBeenCalled();
     expect(mockMetricsService.recordJobCompletion).toHaveBeenCalledWith(
@@ -64,13 +59,13 @@ describe('AnomalyDetectionProcessor.handleAnomalyDetection()', () => {
     expect(mockMetricsService.recordJobFailure).not.toHaveBeenCalled();
   });
 
-  it('does not call sendMail when no anomaly is detected', async () => {
+  it('does not call sendEmail when no anomaly is detected', async () => {
     mockAnomalyDetectionService.detectAnomalies.mockResolvedValue({ isAnomaly: false });
     const processor = makeProcessor();
 
-    await processor.handleAnomalyDetection(makeJob());
+    await processor.process(makeJob());
 
-    expect(mockMailService.sendMail).not.toHaveBeenCalled();
+    expect(mockMailService.sendEmail).not.toHaveBeenCalled();
   });
 
   it('does not send admin notification for low-severity anomaly', async () => {
@@ -82,9 +77,9 @@ describe('AnomalyDetectionProcessor.handleAnomalyDetection()', () => {
     process.env.ADMIN_EMAILS = 'admin@example.com';
     const processor = makeProcessor();
 
-    await processor.handleAnomalyDetection(makeJob());
+    await processor.process(makeJob());
 
-    expect(mockMailService.sendMail).not.toHaveBeenCalled();
+    expect(mockMailService.sendEmail).not.toHaveBeenCalled();
   });
 
   it('notifies admins for high-severity anomaly', async () => {
@@ -93,14 +88,14 @@ describe('AnomalyDetectionProcessor.handleAnomalyDetection()', () => {
       severity: 'high',
       reason: 'Z-score > 5',
     });
-    mockMailService.sendMail.mockResolvedValue(undefined);
+    mockMailService.sendEmail.mockResolvedValue(undefined);
     process.env.ADMIN_EMAILS = 'admin@example.com,ops@example.com';
     const processor = makeProcessor();
 
-    await processor.handleAnomalyDetection(makeJob());
+    await processor.process(makeJob());
 
-    expect(mockMailService.sendMail).toHaveBeenCalledTimes(2);
-    expect(mockMailService.sendMail).toHaveBeenCalledWith(
+    expect(mockMailService.sendEmail).toHaveBeenCalledTimes(2);
+    expect(mockMailService.sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'admin@example.com',
         subject: expect.stringContaining('HIGH'),
@@ -117,8 +112,8 @@ describe('AnomalyDetectionProcessor.handleAnomalyDetection()', () => {
     });
     const processor = makeProcessor();
 
-    await expect(processor.handleAnomalyDetection(makeJob())).resolves.not.toThrow();
-    expect(mockMailService.sendMail).not.toHaveBeenCalled();
+    await expect(processor.process(makeJob())).resolves.not.toThrow();
+    expect(mockMailService.sendEmail).not.toHaveBeenCalled();
   });
 
   it('records failure metric and rethrows when detectAnomalies throws', async () => {
@@ -127,9 +122,7 @@ describe('AnomalyDetectionProcessor.handleAnomalyDetection()', () => {
     );
     const processor = makeProcessor();
 
-    await expect(processor.handleAnomalyDetection(makeJob())).rejects.toThrow(
-      'DB connection lost',
-    );
+    await expect(processor.process(makeJob())).rejects.toThrow('DB connection lost');
 
     expect(mockMetricsService.recordJobCompletion).toHaveBeenCalledWith(
       expect.any(String),
@@ -145,14 +138,13 @@ describe('AnomalyDetectionProcessor.handleAnomalyDetection()', () => {
       severity: 'high',
       reason: 'spike',
     });
-    mockMailService.sendMail
+    mockMailService.sendEmail
       .mockRejectedValueOnce(new Error('SMTP error'))
       .mockResolvedValueOnce(undefined);
     process.env.ADMIN_EMAILS = 'bad@example.com,good@example.com';
     const processor = makeProcessor();
 
-    // Should not throw — failed notifications are logged but not re-thrown
-    await expect(processor.handleAnomalyDetection(makeJob())).resolves.not.toThrow();
-    expect(mockMailService.sendMail).toHaveBeenCalledTimes(2);
+    await expect(processor.process(makeJob())).resolves.not.toThrow();
+    expect(mockMailService.sendEmail).toHaveBeenCalledTimes(2);
   });
 });
