@@ -9,7 +9,10 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 @Controller('admin/queues')
 @Auth('admin')
 export class QueueDashboardController {
-  constructor(private readonly queueDashboardService: QueueDashboardService) {}
+  constructor(
+    private readonly queueDashboardService: QueueDashboardService,
+    private readonly queueCollectorService: QueueCollectorService,
+  ) {}
 
   @Get('*')
   dashboard(
