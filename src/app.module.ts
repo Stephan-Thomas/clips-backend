@@ -36,6 +36,7 @@ import { HealthModule } from './health/health.module';
 import { QueueDashboardModule } from './queue-dashboard/queue-dashboard.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { QueueModule } from './queue/queue.module';
+import { GracefulShutdownModule } from './common/shutdown/graceful-shutdown.module';
 
 @Module({
   imports: [
