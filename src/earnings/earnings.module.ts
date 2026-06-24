@@ -31,6 +31,12 @@ import { registerQueue } from '../common';
     CurrencyConversionService,
     MonthlySummaryService,
   ],
-  exports: [EarningsService, EarningsAggregationService, EarningsExportService, AnomalyDetectionService, CurrencyConversionService],
+  exports: [
+    EarningsService,
+    EarningsAggregationService,
+    EarningsExportService,
+    AnomalyDetectionService,
+    CurrencyConversionService,
+  ],
 })
 export class EarningsModule {}
