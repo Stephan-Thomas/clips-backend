@@ -5,6 +5,9 @@ import { QueueMetricsService } from './queue-metrics.service';
 import { getQueueToken } from '@nestjs/bullmq';
 import { Optional } from '@nestjs/common';
 
+/** Memory alert threshold (in bytes, default 1 GB) */
+const MEMORY_ALERT_THRESHOLD_BYTES = 1 * 1024 * 1024 * 1024;
+
 /**
  * QueueCollectorService periodically collects metrics from all BullMQ queues.
  *
@@ -13,6 +16,7 @@ import { Optional } from '@nestjs/common';
  *   - Polls queue stats every 30 seconds
  *   - Records metrics via QueueMetricsService
  *   - Handles queue unavailability gracefully
+ *   - Tracks worker memory usage and alerts on high memory
  */
 @Injectable()
 export class QueueCollectorService implements OnModuleInit, OnModuleDestroy {
@@ -77,6 +81,39 @@ export class QueueCollectorService implements OnModuleInit, OnModuleDestroy {
   @Interval(30000)
   async collectMetrics(): Promise<void> {
     try {
+      // Collect worker memory usage
+      const memoryUsage = process.memoryUsage();
+      this.queueMetrics.recordWorkerMemoryUsage(memoryUsage);
+
+      // Format memory for logging
+      const formatBytes = (bytes: number): string => {
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let i = 0;
+        while (bytes >= 1024 && i < units.length - 1) {
+          bytes /= 1024;
+          i++;
+        }
+        return `${bytes.toFixed(2)} ${units[i]}`;
+      };
+
+      const memoryLogPayload = {
+        rss: formatBytes(memoryUsage.rss),
+        heapTotal: formatBytes(memoryUsage.heapTotal),
+        heapUsed: formatBytes(memoryUsage.heapUsed),
+        external: formatBytes(memoryUsage.external),
+      };
+
+      // Check for memory threshold alert
+      if (memoryUsage.rss > MEMORY_ALERT_THRESHOLD_BYTES) {
+        this.logger.warn('Worker memory usage above alert threshold', {
+          ...memoryLogPayload,
+          threshold: formatBytes(MEMORY_ALERT_THRESHOLD_BYTES),
+        });
+      } else {
+        this.logger.debug('Worker memory stats', memoryLogPayload);
+      }
+
+      // Collect queue metrics
       for (const [queueName, queue] of this.registeredQueues) {
         try {
           const counts = await queue.getJobCounts(

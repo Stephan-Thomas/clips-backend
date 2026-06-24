@@ -14,6 +14,7 @@ import {
  *   - Job processing time (duration histogram)
  *   - Job failure rate
  *   - Job completion time by queue
+ *   - Worker memory usage (rss, heap total, heap used)
  */
 @Injectable()
 export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
@@ -53,6 +54,27 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
     name: 'clipcash_queue_job_retry_count',
     help: 'Average retry count for jobs by queue',
     labelNames: ['queue'],
+  });
+
+  // Gauges: Worker memory usage
+  private readonly workerMemoryRss = new Gauge({
+    name: 'clipcash_worker_memory_rss_bytes',
+    help: 'Worker resident set size (RSS) in bytes',
+  });
+
+  private readonly workerMemoryHeapTotal = new Gauge({
+    name: 'clipcash_worker_memory_heap_total_bytes',
+    help: 'Worker total heap size in bytes',
+  });
+
+  private readonly workerMemoryHeapUsed = new Gauge({
+    name: 'clipcash_worker_memory_heap_used_bytes',
+    help: 'Worker used heap size in bytes',
+  });
+
+  private readonly workerMemoryExternal = new Gauge({
+    name: 'clipcash_worker_memory_external_bytes',
+    help: 'Worker external memory usage in bytes',
   });
 
   // Map to track job start times for duration calculation
@@ -147,6 +169,18 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Record worker memory usage.
+   *
+   * @param memoryUsage Memory usage object from process.memoryUsage()
+   */
+  recordWorkerMemoryUsage(memoryUsage: NodeJS.MemoryUsage): void {
+    this.workerMemoryRss.set(memoryUsage.rss);
+    this.workerMemoryHeapTotal.set(memoryUsage.heapTotal);
+    this.workerMemoryHeapUsed.set(memoryUsage.heapUsed);
+    this.workerMemoryExternal.set(memoryUsage.external);
+  }
+
+  /**
    * Get all metrics registered in this service.
    * Returns the metrics in Prometheus format.
    *
@@ -158,6 +192,10 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
     jobFailures: Counter;
     jobCompletions: Counter;
     jobRetryRate: Gauge;
+    workerMemoryRss: Gauge;
+    workerMemoryHeapTotal: Gauge;
+    workerMemoryHeapUsed: Gauge;
+    workerMemoryExternal: Gauge;
   } {
     return {
       jobCount: this.jobCount,
@@ -165,6 +203,10 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
       jobFailures: this.jobFailures,
       jobCompletions: this.jobCompletions,
       jobRetryRate: this.jobRetryRate,
+      workerMemoryRss: this.workerMemoryRss,
+      workerMemoryHeapTotal: this.workerMemoryHeapTotal,
+      workerMemoryHeapUsed: this.workerMemoryHeapUsed,
+      workerMemoryExternal: this.workerMemoryExternal,
     };
   }
 
