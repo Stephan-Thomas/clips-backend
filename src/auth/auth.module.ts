@@ -31,6 +31,7 @@ import { registerQueue } from '../common';
     PrismaModule,
     EncryptionModule,
     StellarModule,
+    RedisModule,
     PassportModule.register({ session: false }),
     JwtModule.registerAsync({
       useFactory: () => {
@@ -60,6 +61,7 @@ import { registerQueue } from '../common';
     EmailDeliveryService,
     EmailDeliveryProcessor,
     AdminGuard,
+    QueueOverflowService,
   ],
 })
 export class AuthModule {}

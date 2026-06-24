@@ -3,7 +3,6 @@ import {
   Get,
   HttpException,
   HttpStatus,
-  InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -46,10 +45,25 @@ export class HealthController {
       stats = await this.redisMemoryService.getStats();
     } catch (err) {
       this.logger.error(
-        `Redis memory health check failed: ${(err as Error).message}`,
+        `Redis memory health check threw unexpectedly: ${(err as Error).message}`,
       );
-      throw new InternalServerErrorException(
-        'Unable to retrieve Redis memory stats',
+      // Surface as 503 so monitoring tools can detect and alert on it
+      throw new HttpException(
+        {
+          status: 'degraded',
+          alert: `Unable to retrieve Redis memory stats: ${(err as Error).message}`,
+          unavailable: true,
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    // Redis is unreachable — return 503 with a clear unavailable indicator
+    if (stats.unavailable) {
+      this.logger.warn('Redis memory health check: Redis unavailable');
+      throw new HttpException(
+        { status: 'degraded' as const, stats },
+        HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
 
@@ -58,16 +72,10 @@ export class HealthController {
         usagePercent: stats.usagePercent,
         alert: stats.alert,
       });
-
-      // Return 503 so load balancers / monitoring tools can act on it
-      const response = {
-        status: 'degraded' as const,
-        stats,
-      };
-
-      // Return 503 so load balancers / monitoring tools can act on it.
-      // Throwing HttpException preserves the full JSON body in the response.
-      throw new HttpException(response, HttpStatus.SERVICE_UNAVAILABLE);
+      throw new HttpException(
+        { status: 'degraded' as const, stats },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
     }
 
     return { status: 'ok', stats };

@@ -127,6 +127,7 @@ import { QueueModule } from './queue/queue.module';
     TransactionsModule,
     HealthModule,
     QueueDashboardModule,
+    GracefulShutdownModule,
   ],
   controllers: [AppController],
   providers: [

@@ -24,6 +24,7 @@ import { AyrshareService } from './ayrshare.service';
 import { ClipPublishService } from './clip-publish.service';
 import { RedisModule } from '../redis/redis.module';
 import { QueueRateLimitGuard } from '../common/guards/queue-rate-limit.guard';
+import { QueueOverflowService } from '../common/queue/queue-overflow.service';
 import { UserPlatformModule } from '../user-platform/user-platform.module';
 import { IpfsUploadModule } from '../nft/ipfs-upload.module';
 import { NftOwnershipModule } from '../nft/nft-ownership.module';
@@ -33,6 +34,68 @@ import { ConfigModule } from '../config/config.module';
 
 @Module({
   imports: [
+    ConfigModule,
+    /**
+     * Video-processing queue — CPU/memory intensive (FFmpeg, Cloudinary upload).
+     * lockDuration and stalledInterval are set to exceed the 30-min job timeout
+     * so workers are never falsely declared stalled during a normal run.
+     */
+    BullModule.registerQueue({
+      name: CLIP_GENERATION_QUEUE,
+      defaultJobOptions: { priority: CLIP_GENERATION_QUEUE_PRIORITY },
+    }),
+    BullModule.registerQueue({
+      name: NFT_MINT_QUEUE,
+      defaultJobOptions: { priority: NFT_MINT_QUEUE_PRIORITY },
+    }),
+    PrismaModule,
+    StellarModule,
+    CircuitBreakerModule,
+    RedisModule,
+
+    /**
+     * Posting queue — I/O-bound (Ayrshare HTTP calls, DB updates).
+     */
+    BullModule.registerQueue({
+      name: CLIP_POSTING_QUEUE,
+      defaultJobOptions: { priority: CLIP_POSTING_QUEUE_PRIORITY },
+    }),
+
+    // JwtModule used by ClipsGateway to verify WebSocket handshake tokens
+    JwtModule.register({
+      secret: process.env.JWT_SECRET ?? 'dev_jwt_secret',
+      signOptions: { expiresIn: '7d' },
+    }),
+    UserPlatformModule,
+  ],
+  controllers: [ClipsController],
+  providers: [
+    ClipsService,
+    ClipGenerationProcessor,
+    NftMintProcessor,
+    ClipPostingProcessor,
+    CloudinaryService,
+    ClipsGateway,
+    NftMintService,
+    AyrshareService,
+    ClipPublishService,
+    QueueRateLimitGuard,
+    QueueOverflowService,
+  ],
+  exports: [
+    ClipsService,
+    CloudinaryService,
+    ClipsGateway,
+    NftMintService,
+    ClipPublishService,
+    QueueOverflowService,
+  ],
+})
+export class ClipsModule {}
+
+@Module({
+  imports: [
+    ConfigModule,
     /**
      * Video-processing queue — CPU/memory intensive (FFmpeg, Cloudinary upload).
      * Concurrency is kept low (default 1) so the worker doesn't saturate the host.
@@ -58,14 +121,12 @@ import { ConfigModule } from '../config/config.module';
      */
     registerQueue(CLIP_POSTING_QUEUE),
 
-    PrismaModule,
-    StellarModule,
-    CircuitBreakerModule,
     // JwtModule used by ClipsGateway to verify WebSocket handshake tokens
     JwtModule.register({
       secret: process.env.JWT_SECRET ?? 'dev_jwt_secret',
       signOptions: { expiresIn: '7d' },
     }),
+    UserPlatformModule,
   ],
   controllers: [ClipsController],
   providers: [
@@ -82,6 +143,8 @@ import { ConfigModule } from '../config/config.module';
     AyrshareService,
     ClipPublishService,
     QueueRateLimitGuard,
+    // Overflow protection: delays excess jobs instead of dropping them
+    QueueOverflowService,
   ],
   exports: [
     ClipsService,
@@ -89,6 +152,7 @@ import { ConfigModule } from '../config/config.module';
     ClipsGateway,
     NftMintService,
     ClipPublishService,
+    QueueOverflowService,
   ],
 })
 export class ClipsModule {}
