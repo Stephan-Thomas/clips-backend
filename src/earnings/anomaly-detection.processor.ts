@@ -1,5 +1,5 @@
-import { Logger, OnModuleInit } from '@nestjs/common';
-import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { AnomalyDetectionService } from './anomaly-detection.service';
 import { MetricsService } from '../metrics/metrics.service';
@@ -20,21 +20,19 @@ interface AnomalyDetectionJob {
  *  - @OnWorkerEvent handlers are available for structured failure logging.
  */
 @Processor(ANOMALY_DETECTION_QUEUE)
-export class AnomalyDetectionProcessor extends WorkerHost implements OnModuleInit {
+export class AnomalyDetectionProcessor extends WorkerHost {
   private readonly logger = new Logger(AnomalyDetectionProcessor.name);
 
   constructor(
-    private readonly anomalyDetectionService: AnomalyDetectionService,
-    private readonly mailService: MailService,
-    private readonly metricsService: MetricsService,
-    private readonly shutdownService: GracefulShutdownService,
+    private anomalyDetectionService: AnomalyDetectionService,
+    private mailService: MailService,
+    private metricsService: MetricsService,
   ) {
     super();
   }
 
-  onModuleInit(): void {
-    this.shutdownService.register(this.worker);
-  }
+  async process(job: Job<AnomalyDetectionJob>): Promise<void> {
+    const { earningId } = job.data;
 
   async process(job: Job<AnomalyDetectionJob>): Promise<void> {
     const { earningId } = job.data;
@@ -46,8 +44,11 @@ export class AnomalyDetectionProcessor extends WorkerHost implements OnModuleIni
     try {
       const result = await this.anomalyDetectionService.detectAnomalies(earningId);
 
-      if (result.isAnomaly && result.severity === 'high') {
-        await this.notifyAdmins(result);
+      if (result.isAnomaly && result.severity === 'high' && result.reason) {
+        await this.notifyAdmins({
+          reason: result.reason,
+          severity: result.severity,
+        });
       }
 
       this.metricsService.recordJobCompletion(jobMetricId, ANOMALY_DETECTION_QUEUE, 'success');
@@ -101,7 +102,11 @@ export class AnomalyDetectionProcessor extends WorkerHost implements OnModuleIni
 
     for (const email of adminEmails) {
       try {
-        await this.mailService.sendMail({ to: email.trim(), subject, text });
+        await this.mailService.sendEmail({
+          to: email.trim(),
+          subject,
+          text,
+        });
         this.logger.log(`Anomaly notification sent to ${email}`);
       } catch (error) {
         this.logger.error(`Failed to send anomaly notification to ${email}:`, error);

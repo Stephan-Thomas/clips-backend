@@ -1,5 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { NftMintService } from './nft-mint.service';
+import { IpfsUploadService } from '../nft/ipfs-upload.service';
+import { ConfigService } from '../config/config.service';
 
 describe('NftMintService uploadMetadataToIPFS', () => {
   const prismaMock = {
@@ -24,6 +26,26 @@ describe('NftMintService uploadMetadataToIPFS', () => {
     execute: jest.fn().mockImplementation((_config, fn) => fn()),
   };
 
+  const configMock = {
+    creatorRoyaltyBps: 1000,
+    platformRoyaltyBps: 100,
+    platformWallet: 'GDV76E6XN6A3Q3WXVZ4KPRQ7L6E6XN6A3Q3WXVZ4KPRQ7L6E6XN6',
+    sorobanNftContractId: '',
+  } as ConfigService;
+
+  const ipfsUploadMock = {
+    uploadMetadata: jest.fn(),
+  };
+
+  const nftOwnershipMock = {
+    verifyNFTOwnership: jest.fn(),
+  };
+
+  const royaltyConfigMock = {
+    getCreatorRoyaltyBps: jest.fn().mockReturnValue(1000),
+    buildRoyaltyMap: jest.fn(),
+  };
+
   let service: NftMintService;
 
   beforeEach(() => {
@@ -33,6 +55,10 @@ describe('NftMintService uploadMetadataToIPFS', () => {
       stellarMock as any,
       metricsMock as any,
       circuitBreakerMock as any,
+      configMock,
+      ipfsUploadMock as unknown as IpfsUploadService,
+      nftOwnershipMock as any,
+      royaltyConfigMock as any,
     );
   });
 
@@ -68,16 +94,13 @@ describe('NftMintService uploadMetadataToIPFS', () => {
       postStatus: { tiktok: true },
     });
 
-    const uploadSpy = jest
-      .spyOn(service as any, 'uploadMetadataToIpfs')
-      .mockResolvedValue('ipfs://bafyTestCid123');
-
+    ipfsUploadMock.uploadMetadata.mockResolvedValue('ipfs://bafyTestCid123');
     prismaMock.clip.update.mockResolvedValue({});
 
     const result = await service.uploadMetadataToIPFS(5);
 
-    expect(uploadSpy).toHaveBeenCalledTimes(1);
-    const [metadata, clipId] = uploadSpy.mock.calls[0];
+    expect(ipfsUploadMock.uploadMetadata).toHaveBeenCalledTimes(1);
+    const [metadata, clipId] = ipfsUploadMock.uploadMetadata.mock.calls[0];
 
     expect(clipId).toBe(5);
     expect(metadata as any).toMatchObject({

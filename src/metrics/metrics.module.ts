@@ -1,25 +1,21 @@
-import { Module, Global } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { MetricsService } from './metrics.service';
-import { MetricsInterceptor } from './metrics.interceptor';
 import { MetricsController } from './metrics.controller';
+import { MetricsInterceptor } from './metrics.interceptor';
+import { QueueMetricsService } from './queue-metrics.service';
+import { QueueCollectorService } from './queue-collector.service';
 
-/**
- * MetricsModule
- *
- * Global module — MetricsService and MetricsInterceptor are available
- * everywhere without needing to import MetricsModule in every feature module.
- *
- * Provides:
- *   MetricsService    — counters, histograms, gauges, and summaries
- *   MetricsInterceptor — HTTP duration/throughput recording (registered globally in main.ts)
- *
- * Exposes:
- *   GET /metrics — Prometheus scrape endpoint (guarded by METRICS_TOKEN)
- */
 @Global()
 @Module({
+  imports: [ScheduleModule.forRoot()],
   controllers: [MetricsController],
-  providers: [MetricsService, MetricsInterceptor],
-  exports: [MetricsService, MetricsInterceptor],
+  providers: [
+    QueueMetricsService,
+    QueueCollectorService,
+    MetricsService,
+    MetricsInterceptor,
+  ],
+  exports: [MetricsService, MetricsInterceptor, QueueMetricsService],
 })
 export class MetricsModule {}
