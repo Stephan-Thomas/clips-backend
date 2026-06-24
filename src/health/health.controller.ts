@@ -7,10 +7,17 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RedisMemoryService, RedisMemoryStats } from './redis-memory.service';
+import { RedisService } from '../redis/redis.service';
 
 interface HealthResponse {
   status: 'ok' | 'degraded';
   stats: RedisMemoryStats;
+}
+
+interface RedisHealthResponse {
+  status: 'ok' | 'degraded';
+  connected: boolean;
+  latencyMs: number | null;
 }
 
 @ApiTags('health')
@@ -18,7 +25,10 @@ interface HealthResponse {
 export class HealthController {
   private readonly logger = new Logger(HealthController.name);
 
-  constructor(private readonly redisMemoryService: RedisMemoryService) {}
+  constructor(
+    private readonly redisMemoryService: RedisMemoryService,
+    private readonly redisService: RedisService,
+  ) {}
 
   /**
    * Returns current Redis memory utilisation.
@@ -79,5 +89,28 @@ export class HealthController {
     }
 
     return { status: 'ok', stats };
+  }
+
+  @Get('redis')
+  @ApiOperation({
+    summary: 'Redis connection health check',
+    description: 'Returns Redis connection status and round-trip latency.',
+  })
+  @ApiResponse({ status: 200, description: 'Redis is reachable.' })
+  @ApiResponse({ status: 503, description: 'Redis is unreachable.' })
+  async checkRedis(): Promise<RedisHealthResponse> {
+    const start = Date.now();
+    const connected = await this.redisService.ping();
+    const latencyMs = connected ? Date.now() - start : null;
+
+    if (!connected) {
+      this.logger.warn('Redis health check: Redis unreachable');
+      throw new HttpException(
+        { status: 'degraded', connected: false, latencyMs: null },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    return { status: 'ok', connected: true, latencyMs };
   }
 }
