@@ -4,10 +4,16 @@ import { ClipsController } from './clips.controller';
 import { ClipsService } from './clips.service';
 import { ClipGenerationProcessor } from './clip-generation.processor';
 import { CloudinaryService } from './cloudinary.service';
-import { CLIP_GENERATION_QUEUE } from './clip-generation.queue';
-import { NFT_MINT_QUEUE } from './nft-mint.queue';
+import {
+  CLIP_GENERATION_QUEUE,
+  CLIP_GENERATION_QUEUE_PRIORITY,
+} from './clip-generation.queue';
+import { NFT_MINT_QUEUE, NFT_MINT_QUEUE_PRIORITY } from './nft-mint.queue';
 import { NftMintProcessor } from './nft-mint.processor';
-import { CLIP_POSTING_QUEUE } from './clip-posting.queue';
+import {
+  CLIP_POSTING_QUEUE,
+  CLIP_POSTING_QUEUE_PRIORITY,
+} from './clip-posting.queue';
 import { ClipPostingProcessor } from './clip-posting.processor';
 import { ClipsGateway } from './clips.gateway';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -19,7 +25,11 @@ import { ClipPublishService } from './clip-publish.service';
 import { RedisModule } from '../redis/redis.module';
 import { QueueRateLimitGuard } from '../common/guards/queue-rate-limit.guard';
 import { UserPlatformModule } from '../user-platform/user-platform.module';
-import { registerQueue } from '../common';
+import { IpfsUploadModule } from '../nft/ipfs-upload.module';
+import { NftOwnershipModule } from '../nft/nft-ownership.module';
+import { RoyaltyConfigurationService } from '../nft/royalty-configuration.service';
+import { MetricsModule } from '../metrics/metrics.module';
+import { ConfigModule } from '../config/config.module';
 
 @Module({
   imports: [
@@ -34,6 +44,11 @@ import { registerQueue } from '../common';
     StellarModule,
     CircuitBreakerModule,
     RedisModule,
+    IpfsUploadModule,
+    NftOwnershipModule,
+    MetricsModule,
+    ConfigModule,
+    UserPlatformModule,
 
     /**
      * Posting queue — I/O-bound (Ayrshare HTTP calls, DB updates).
@@ -63,6 +78,7 @@ import { registerQueue } from '../common';
     CloudinaryService,
     ClipsGateway,
     NftMintService,
+    RoyaltyConfigurationService,
     AyrshareService,
     ClipPublishService,
     QueueRateLimitGuard,

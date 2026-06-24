@@ -8,9 +8,20 @@ describe('EmailDeliveryProcessor', () => {
         .fn()
         .mockRejectedValue(new Error('SMTP temporarily unavailable')),
     };
-    const processor = new EmailDeliveryProcessor(mailService as any);
+    const metricsService = {
+      recordJobStart: jest.fn(),
+      recordJobCompletion: jest.fn(),
+      recordJobFailure: jest.fn(),
+    };
+    const processor = new EmailDeliveryProcessor(
+      mailService as any,
+      metricsService as any,
+    );
 
     const job = {
+      id: 'job-1',
+      attemptsMade: 0,
+      opts: { attempts: 3 },
       data: {
         to: 'user@example.com',
         subject: 'Verify your email address',
