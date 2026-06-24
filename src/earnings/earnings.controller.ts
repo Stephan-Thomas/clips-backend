@@ -24,6 +24,14 @@ interface RequestWithUser extends Request {
 export class EarningsController {
   constructor(private readonly earningsService: EarningsService) {}
 
+  @Get('metrics')
+  async getDashboardMetrics(
+    @Req() req: RequestWithUser,
+    @Query('currency') currency: Currency = Currency.USD,
+  ) {
+    return this.earningsService.getDashboardMetrics(req.user.userId, currency);
+  }
+
   @Get('export')
   async exportEarnings(
     @Req() req: RequestWithUser,
