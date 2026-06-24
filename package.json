@@ -115,7 +115,8 @@
     ],
     "moduleNameMapper": {
       "^@prisma/client$": "<rootDir>/__mocks__/@prisma/client.ts",
-      "^cockatiel$": "<rootDir>/__mocks__/cockatiel.ts"
+      "^cockatiel$": "<rootDir>/__mocks__/cockatiel.ts",
+      "^(\\.{1,2}/.*)\\.js$": "$1"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
@@ -129,6 +130,7 @@
         "statements": 70
       }
     },
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "setupFilesAfterEnv": ["<rootDir>/test-setup.ts"]
   }
 }

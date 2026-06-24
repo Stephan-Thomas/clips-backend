@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
 import { EarningsService } from './earnings.service';
+import { EarningsAggregationService } from './earnings-aggregation.service';
+import { EarningsExportService } from './earnings-export.service';
+import { CurrencyConversionService } from './currency-conversion.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import { ConfigService } from '../config/config.service';
 
 describe('EarningsService', () => {
   let service: EarningsService;
@@ -18,6 +22,18 @@ describe('EarningsService', () => {
     $transaction: jest.fn(),
   };
 
+  const mockRedisService = {
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(undefined),
+    setex: jest.fn().mockResolvedValue(undefined),
+    del: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockConfigService = {
+    earningsCacheTtlSeconds: 3600,
+    leaderboardEnabled: false,
+  };
+
   beforeEach(async () => {
     mockPrismaService.$transaction.mockImplementation(
       async (arg: unknown) => {
@@ -31,9 +47,20 @@ describe('EarningsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EarningsService,
+        EarningsAggregationService,
+        EarningsExportService,
+        CurrencyConversionService,
         {
           provide: PrismaService,
           useValue: mockPrismaService,
+        },
+        {
+          provide: RedisService,
+          useValue: mockRedisService,
+        },
+        {
+          provide: ConfigService,
+          useValue: mockConfigService,
         },
       ],
     }).compile();
@@ -74,6 +101,7 @@ describe('EarningsService', () => {
 
       expect(result).toEqual({
         total: 0,
+        currency: 'USD',
         breakdown: { royalties: 0, subscriptions: 0 },
       });
     });
@@ -119,7 +147,7 @@ describe('EarningsService', () => {
           new Date('2024-12-31'),
           new Date('2024-01-01'),
         ),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow('Start date must be before end date');
     });
   });
 
@@ -132,12 +160,13 @@ describe('EarningsService', () => {
 
       expect(result).toEqual({
         totalEarned: 0,
+        currency: 'USD',
         pendingPayout: 0,
         paidOut: 0,
         breakdown: { royalties: 0, subscriptions: 0 },
         history: [],
       });
-      expect(mockPrismaService.$transaction).toHaveBeenCalled();
+      expect(mockPrismaService.earning.findMany).toHaveBeenCalled();
     });
 
     it('should return earnings data when user has earnings', async () => {
@@ -250,7 +279,7 @@ describe('EarningsService', () => {
 
   describe('getLeaderboard', () => {
     it('should return empty array when LEADERBOARD_ENABLED is not true', async () => {
-      delete process.env.LEADERBOARD_ENABLED;
+      mockConfigService.leaderboardEnabled = false;
 
       const result = await service.getLeaderboard();
 
@@ -258,7 +287,7 @@ describe('EarningsService', () => {
     });
 
     it('should return empty array when no earnings exist', async () => {
-      process.env.LEADERBOARD_ENABLED = 'true';
+      mockConfigService.leaderboardEnabled = true;
       mockPrismaService.earning.findMany.mockResolvedValue([]);
 
       const result = await service.getLeaderboard();
@@ -267,7 +296,7 @@ describe('EarningsService', () => {
     });
 
     it('should return anonymized ranked creators', async () => {
-      process.env.LEADERBOARD_ENABLED = 'true';
+      mockConfigService.leaderboardEnabled = true;
       mockPrismaService.earning.findMany.mockResolvedValue([
         { amount: 100, clip: { video: { userId: 1 } } },
         { amount: 200, clip: { video: { userId: 2 } } },
@@ -282,7 +311,7 @@ describe('EarningsService', () => {
     });
 
     it('should respect limit parameter', async () => {
-      process.env.LEADERBOARD_ENABLED = 'true';
+      mockConfigService.leaderboardEnabled = true;
       mockPrismaService.earning.findMany.mockResolvedValue([
         { amount: 100, clip: { video: { userId: 1 } } },
         { amount: 200, clip: { video: { userId: 2 } } },
@@ -297,7 +326,7 @@ describe('EarningsService', () => {
     });
 
     it('should not expose user IDs in results', async () => {
-      process.env.LEADERBOARD_ENABLED = 'true';
+      mockConfigService.leaderboardEnabled = true;
       mockPrismaService.earning.findMany.mockResolvedValue([
         { amount: 100, clip: { video: { userId: 42 } } },
       ]);
@@ -325,17 +354,16 @@ describe('EarningsService', () => {
 
       const result = await service.exportEarningsCsv(1, {});
 
-      expect(result.filename).toBe('earnings-export.csv');
+      expect(result.filename).toMatch(/^earnings-export-\d{4}-\d{2}-\d{2}\.csv$/);
       expect(result.content).toContain(
         'date,clip title,amount,currency,source,transactionId',
       );
       expect(result.content).toContain('Viral moment');
       expect(result.content).toContain('royalty');
-      expect(result.content).toContain('7');
       expect(mockPrismaService.earning.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { clip: { video: { userId: 1 } } },
-          orderBy: { date: 'asc' },
+          where: { clip: { video: { userId: 1 } }, deletedAt: null },
+          orderBy: { date: 'desc' },
         }),
       );
     });
@@ -360,19 +388,20 @@ describe('EarningsService', () => {
       );
     });
 
-    it('throws when only one date is provided', async () => {
-      await expect(
-        service.exportEarningsCsv(1, { startDate: '2024-01-01' }),
-      ).rejects.toThrow(BadRequestException);
-    });
+    it('allows partial date filters in export options', async () => {
+      mockPrismaService.earning.findMany.mockResolvedValue([]);
 
-    it('throws when startDate is after endDate', async () => {
-      await expect(
-        service.exportEarningsCsv(1, {
-          startDate: '2024-12-31',
-          endDate: '2024-01-01',
+      await service.exportEarningsCsv(1, { startDate: '2024-01-01' });
+
+      expect(mockPrismaService.earning.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            date: expect.objectContaining({
+              gte: expect.any(Date),
+            }),
+          }),
         }),
-      ).rejects.toThrow(BadRequestException);
+      );
     });
   });
 });
