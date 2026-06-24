@@ -24,6 +24,31 @@ interface RequestWithUser extends Request {
 export class EarningsController {
   constructor(private readonly earningsService: EarningsService) {}
 
+  @Get('tax-report')
+  async exportTaxReport(
+    @Req() req: RequestWithUser,
+    @Res() res: Response,
+    @Query('year') year = String(new Date().getFullYear()),
+    @Query('format') format = 'csv',
+  ) {
+    if (format !== 'csv') {
+      throw new BadRequestException('Only format=csv is supported');
+    }
+
+    const parsedYear = parseInt(year, 10);
+    const { filename, content } = await this.earningsService.exportTaxReportCsv(
+      req.user.userId,
+      parsedYear,
+    );
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"`,
+    );
+    res.send(content);
+  }
+
   @Get('export')
   async exportEarnings(
     @Req() req: RequestWithUser,

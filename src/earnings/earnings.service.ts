@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Currency } from './earnings.types';
 import { EarningsAggregationService } from './earnings-aggregation.service';
 import { EarningsExportService, EarningsExportOptions, EarningsExportResult } from './earnings-export.service';
+import { TaxReportExportService } from './tax-report-export.service';
 
 export interface LeaderboardEntry {
   rank: number;
@@ -14,6 +15,7 @@ export class EarningsService {
   constructor(
     private aggregationService: EarningsAggregationService,
     private exportService: EarningsExportService,
+    private taxReportExportService: TaxReportExportService,
   ) {}
 
   public async invalidateUserEarningsCache(userId: number): Promise<void> {
@@ -47,6 +49,10 @@ export class EarningsService {
     options: EarningsExportOptions,
   ): Promise<EarningsExportResult> {
     return this.exportService.exportEarningsCsv(userId, options);
+  }
+
+  async exportTaxReportCsv(userId: number, year: number) {
+    return this.taxReportExportService.exportTaxReportCsv(userId, year);
   }
 
   async softDelete(earningId: number, userId: number) {
