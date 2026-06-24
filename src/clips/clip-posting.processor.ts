@@ -1,4 +1,5 @@
 import { Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
@@ -7,6 +8,7 @@ import { UserPlatformService } from '../user-platform/user-platform.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { CLIP_POSTING_QUEUE, type ClipPostingJob } from './clip-posting.queue';
 import { GracefulShutdownService } from '../common/shutdown/graceful-shutdown.service';
+import { getBullMQWorkerConfig } from '../config/bullmq.config';
 
 /**
  * BullMQ processor for clip-posting jobs.
@@ -26,7 +28,7 @@ import { GracefulShutdownService } from '../common/shutdown/graceful-shutdown.se
  *   backoff  : exponential, starting at 2 000 ms
  */
 @Processor(CLIP_POSTING_QUEUE, {
-  concurrency: 10,
+  concurrency: getBullMQWorkerConfig(new ConfigService()).clipPostingConcurrency,
 })
 export class ClipPostingProcessor extends WorkerHost implements OnModuleInit {
   private readonly logger = new Logger(ClipPostingProcessor.name);
