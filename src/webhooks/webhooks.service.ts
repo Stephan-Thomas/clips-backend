@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { PrismaClient } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EarningsService } from '../earnings/earnings.service';
 import * as crypto from 'crypto';
+
+type PrismaTx = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
 
 @Injectable()
 export class WebhooksService {
@@ -44,19 +47,21 @@ export class WebhooksService {
 
   async processTikTokWebhook(payload: any): Promise<void> {
     try {
-      await this.prisma.platformWebhookLog.create({
-        data: {
-          platform: 'tiktok',
-          eventType: payload.event_type || 'unknown',
-          payload: JSON.stringify(payload),
-          signature: payload.signature,
-          isValid: true,
-        },
-      });
+      await this.prisma.withTransaction(async (tx) => {
+        await tx.platformWebhookLog.create({
+          data: {
+            platform: 'tiktok',
+            eventType: payload.event_type || 'unknown',
+            payload: JSON.stringify(payload),
+            signature: payload.signature,
+            isValid: true,
+          },
+        });
 
-      if (payload.event_type === 'video_earnings' && payload.data) {
-        await this.createEarningFromWebhook(payload.data, 'tiktok');
-      }
+        if (payload.event_type === 'video_earnings' && payload.data) {
+          await this.createEarningInTransaction(tx, payload.data, 'tiktok');
+        }
+      });
 
       this.logger.log('TikTok webhook processed successfully');
     } catch (error) {
@@ -79,19 +84,21 @@ export class WebhooksService {
 
   async processYouTubeWebhook(payload: any): Promise<void> {
     try {
-      await this.prisma.platformWebhookLog.create({
-        data: {
-          platform: 'youtube',
-          eventType: payload.type || 'unknown',
-          payload: JSON.stringify(payload),
-          signature: payload.signature,
-          isValid: true,
-        },
-      });
+      await this.prisma.withTransaction(async (tx) => {
+        await tx.platformWebhookLog.create({
+          data: {
+            platform: 'youtube',
+            eventType: payload.type || 'unknown',
+            payload: JSON.stringify(payload),
+            signature: payload.signature,
+            isValid: true,
+          },
+        });
 
-      if (payload.type === 'video_earnings' && payload.data) {
-        await this.createEarningFromWebhook(payload.data, 'youtube');
-      }
+        if (payload.type === 'video_earnings' && payload.data) {
+          await this.createEarningInTransaction(tx, payload.data, 'youtube');
+        }
+      });
 
       this.logger.log('YouTube webhook processed successfully');
     } catch (error) {
@@ -112,7 +119,11 @@ export class WebhooksService {
     }
   }
 
-  private async createEarningFromWebhook(data: any, platform: string): Promise<void> {
+  private async createEarningInTransaction(
+    tx: PrismaTx,
+    data: any,
+    platform: string,
+  ): Promise<void> {
     const { clipId, amount, currency = 'USD', date } = data;
 
     if (!clipId || !amount || !date) {
@@ -120,7 +131,7 @@ export class WebhooksService {
       return;
     }
 
-    const clip = await this.prisma.clip.findUnique({
+    const clip = await tx.clip.findUnique({
       where: { id: clipId },
       include: { video: true },
     });
@@ -130,7 +141,7 @@ export class WebhooksService {
       return;
     }
 
-    await this.prisma.earning.create({
+    await tx.earning.create({
       data: {
         clipId,
         amount: parseFloat(amount),
@@ -140,9 +151,9 @@ export class WebhooksService {
       },
     });
 
-    // Invalidate earnings cache for the user
-    await this.earningsService.invalidateUserEarningsCache(clip.video.userId);
+    this.logger.log(`Created earning for clip ${clipId} from ${platform} webhook: $${amount}`);
 
-    this.logger.log(`Created earning for clip ${clipId} from ${platform} webhook: $${amount} and invalidated user ${clip.video.userId} cache`);
+    // Invalidate cache after transaction commits (fire-and-forget, not part of transaction)
+    void this.earningsService.invalidateUserEarningsCache(clip.video.userId);
   }
 }
