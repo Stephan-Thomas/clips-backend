@@ -27,4 +27,4 @@ jobs:
         run: npm ci
 
       - name: Run contract-style API tests
-        run: npm test -- --runInBand test/contract.api-spec.ts
+        run: npx jest --config test/jest-contract.json --runInBand
