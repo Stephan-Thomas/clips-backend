@@ -59,14 +59,14 @@ describe('BullMQ Configuration', () => {
       );
     });
 
-    it('should reject clip generation concurrency > 20', () => {
+    it('should reject clip generation concurrency > 200', () => {
       const config: BullMQWorkerConfig = {
-        clipGenerationConcurrency: 25,
+        clipGenerationConcurrency: 250,
         emailDeliveryConcurrency: 5,
       };
 
       expect(() => validateWorkerConfig(config)).toThrow(
-        /BULLMQ_CLIP_GENERATION_CONCURRENCY should not exceed 20/,
+        /BULLMQ_CLIP_GENERATION_CONCURRENCY should not exceed 200/,
       );
     });
 
@@ -100,7 +100,7 @@ describe('BullMQ Configuration', () => {
       expect(() => validateWorkerConfig(minConfig)).not.toThrow();
 
       const maxConfig: BullMQWorkerConfig = {
-        clipGenerationConcurrency: 20,
+        clipGenerationConcurrency: 200,
         emailDeliveryConcurrency: 50,
       };
       expect(() => validateWorkerConfig(maxConfig)).not.toThrow();

@@ -7,23 +7,17 @@ import { AdminAnomaliesController } from './admin.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AnomalyDetectionService } from './anomaly-detection.service';
 import { AnomalyDetectionProcessor } from './anomaly-detection.processor';
-import { BullModule } from '@nestjs/bullmq';
-import {
-  ANOMALY_DETECTION_QUEUE,
-  ANOMALY_DETECTION_QUEUE_PRIORITY,
-} from './anomaly-detection.queue';
+import { ANOMALY_DETECTION_QUEUE } from './anomaly-detection.queue';
 import { AuthModule } from '../auth/auth.module';
 import { CurrencyConversionService } from './currency-conversion.service';
 import { RedisModule } from '../redis/redis.module';
 import { MonthlySummaryService } from './monthly-summary.service';
+import { registerQueue } from '../common';
 
 @Module({
   imports: [
     PrismaModule,
-    BullModule.registerQueue({
-      name: ANOMALY_DETECTION_QUEUE,
-      defaultJobOptions: { priority: ANOMALY_DETECTION_QUEUE_PRIORITY },
-    }),
+    registerQueue(ANOMALY_DETECTION_QUEUE),
     AuthModule,
     RedisModule,
   ],
@@ -37,6 +31,12 @@ import { MonthlySummaryService } from './monthly-summary.service';
     CurrencyConversionService,
     MonthlySummaryService,
   ],
-  exports: [EarningsService, EarningsAggregationService, EarningsExportService, AnomalyDetectionService, CurrencyConversionService],
+  exports: [
+    EarningsService,
+    EarningsAggregationService,
+    EarningsExportService,
+    AnomalyDetectionService,
+    CurrencyConversionService,
+  ],
 })
 export class EarningsModule {}

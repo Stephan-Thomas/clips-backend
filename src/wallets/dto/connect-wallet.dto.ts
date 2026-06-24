@@ -1,16 +1,24 @@
-import { IsIn, IsString } from 'class-validator';
+import { IsString, IsNotEmpty, IsIn } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class ConnectWalletDto {
-  @ApiProperty({ example: 'GC6XOTK6L6LGBKIWH3IRUZPVUY4COGEMW4J5YINOSPKO27YKTUUHTZF3' })
+/** @deprecated Use CreateWalletConnectionDto */
+export type ConnectWalletDto = CreateWalletConnectionDto;
+
+export class CreateWalletConnectionDto {
+  @ApiProperty({ description: 'The wallet address (e.g., Stellar G address)' })
   @IsString()
+  @IsNotEmpty()
   address: string;
 
-  @ApiProperty({ example: 'stellar', enum: ['stellar'] })
+  @ApiProperty({ description: 'The blockchain network', example: 'stellar' })
+  @IsString()
+  @IsNotEmpty()
   @IsIn(['stellar'])
   chain: string;
 
-  @ApiProperty({ example: 'freighter', enum: ['freighter', 'albedo', 'lobstr'] })
-  @IsIn(['freighter', 'albedo', 'lobstr'])
+  @ApiProperty({ description: 'The wallet provider type', example: 'freighter' })
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(['freighter', 'lobstr', 'albedo'])
   type: string;
 }
