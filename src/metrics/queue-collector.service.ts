@@ -127,14 +127,28 @@ export class QueueCollectorService implements OnModuleInit, OnModuleDestroy {
 
           this.queueMetrics.recordQueueCounts(queueName, counts);
 
-          // Calculate average retry count
+          // Aggregate retry counts and failure reasons from the last 100 failed jobs
           const failedJobs = await queue.getFailed(0, 100);
+
+          const totalRetries = failedJobs.reduce(
+            (sum, job) => sum + (job.attemptsMade || 0),
+            0,
+          );
           const avgRetries =
-            failedJobs.length > 0
-              ? failedJobs.reduce((sum, job) => sum + (job.attemptsMade || 0), 0) /
-                failedJobs.length
-              : 0;
+            failedJobs.length > 0 ? totalRetries / failedJobs.length : 0;
           this.queueMetrics.recordAvgRetryCount(queueName, avgRetries);
+
+          // Count occurrences of each failure reason and record them
+          const reasonCounts = new Map<string, number>();
+          for (const job of failedJobs) {
+            const reason = job.failedReason ?? 'unknown';
+            // Normalise: strip long stack details, keep first line only
+            const key = reason.split('\n')[0].slice(0, 120);
+            reasonCounts.set(key, (reasonCounts.get(key) ?? 0) + 1);
+          }
+          for (const [reason, count] of reasonCounts) {
+            this.queueMetrics.recordFailureReasonCount(queueName, reason, count);
+          }
 
           this.logger.debug(
             `Queue metrics [${queueName}]: waiting=${counts.waiting}, active=${counts.active}, ` +

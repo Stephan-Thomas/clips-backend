@@ -56,25 +56,11 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
     labelNames: ['queue'],
   });
 
-  // Gauges: Worker memory usage
-  private readonly workerMemoryRss = new Gauge({
-    name: 'clipcash_worker_memory_rss_bytes',
-    help: 'Worker resident set size (RSS) in bytes',
-  });
-
-  private readonly workerMemoryHeapTotal = new Gauge({
-    name: 'clipcash_worker_memory_heap_total_bytes',
-    help: 'Worker total heap size in bytes',
-  });
-
-  private readonly workerMemoryHeapUsed = new Gauge({
-    name: 'clipcash_worker_memory_heap_used_bytes',
-    help: 'Worker used heap size in bytes',
-  });
-
-  private readonly workerMemoryExternal = new Gauge({
-    name: 'clipcash_worker_memory_external_bytes',
-    help: 'Worker external memory usage in bytes',
+  // Gauge: failure reason counts by queue and reason
+  private readonly jobFailureReasons = new Gauge({
+    name: 'clipcash_queue_failure_reason_count',
+    help: 'Number of failed jobs by queue and failure reason (sampled from last 100 failed jobs)',
+    labelNames: ['queue', 'reason'],
   });
 
   // Map to track job start times for duration calculation
@@ -169,15 +155,14 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Record worker memory usage.
+   * Record failure reason counts for a queue (sampled from failed job list).
    *
-   * @param memoryUsage Memory usage object from process.memoryUsage()
+   * @param queue Queue name
+   * @param reason Normalised failure reason string
+   * @param count Number of jobs with this reason in the current sample
    */
-  recordWorkerMemoryUsage(memoryUsage: NodeJS.MemoryUsage): void {
-    this.workerMemoryRss.set(memoryUsage.rss);
-    this.workerMemoryHeapTotal.set(memoryUsage.heapTotal);
-    this.workerMemoryHeapUsed.set(memoryUsage.heapUsed);
-    this.workerMemoryExternal.set(memoryUsage.external);
+  recordFailureReasonCount(queue: string, reason: string, count: number): void {
+    this.jobFailureReasons.set({ queue, reason }, count);
   }
 
   /**
@@ -192,10 +177,7 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
     jobFailures: Counter;
     jobCompletions: Counter;
     jobRetryRate: Gauge;
-    workerMemoryRss: Gauge;
-    workerMemoryHeapTotal: Gauge;
-    workerMemoryHeapUsed: Gauge;
-    workerMemoryExternal: Gauge;
+    jobFailureReasons: Gauge;
   } {
     return {
       jobCount: this.jobCount,
@@ -203,10 +185,7 @@ export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
       jobFailures: this.jobFailures,
       jobCompletions: this.jobCompletions,
       jobRetryRate: this.jobRetryRate,
-      workerMemoryRss: this.workerMemoryRss,
-      workerMemoryHeapTotal: this.workerMemoryHeapTotal,
-      workerMemoryHeapUsed: this.workerMemoryHeapUsed,
-      workerMemoryExternal: this.workerMemoryExternal,
+      jobFailureReasons: this.jobFailureReasons,
     };
   }
 
