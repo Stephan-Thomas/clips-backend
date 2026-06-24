@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class JobFailureNotifierService implements OnModuleInit {
   private readonly logger = new Logger(JobFailureNotifierService.name);
   private readonly adminEmail = process.env.ADMIN_EMAIL || 'admin@example.com';
+  private readonly slackWebhookUrl = process.env.SLACK_WEBHOOK_URL;
 
   constructor(
     @InjectQueue(CLIP_GENERATION_QUEUE)
@@ -35,8 +36,11 @@ export class JobFailureNotifierService implements OnModuleInit {
           handler: (job: { id?: string; attemptsMade?: number; opts?: { attempts?: number }; data?: unknown } | undefined, error: Error) => void,
         ): void;
       }).on('failed', async (job, error) => {
-        if (job && (job.attemptsMade ?? 0) >= (job.opts?.attempts || 3)) {
-          await this.handleCriticalFailure(jobType, job.id, job.data, error);
+        const isFinalAttempt = job && (job.attemptsMade ?? 0) >= (job.opts?.attempts || 3);
+        if (isFinalAttempt) {
+          await this.handleCriticalFailure(jobType, job!.id, job!.data, error);
+        } else {
+          await this.sendSlackNotification(jobType, job?.id, job?.data, error, false);
         }
       });
     };
@@ -59,7 +63,10 @@ export class JobFailureNotifierService implements OnModuleInit {
     );
 
     try {
-      await this.sendAdminNotification(jobType, jobId, jobData, error);
+      await Promise.all([
+        this.sendAdminNotification(jobType, jobId, jobData, error),
+        this.sendSlackNotification(jobType, jobId, jobData, error, true),
+      ]);
 
       if (jobType === 'Payout' && jobData?.payoutId) {
         await this.sendUserNotification(jobData.payoutId, error);
@@ -99,6 +106,50 @@ export class JobFailureNotifierService implements OnModuleInit {
     this.logger.log(`Admin notification sent for ${jobType} job ${jobId}`);
   }
 
+  private async sendSlackNotification(
+    jobType: string,
+    jobId: string | undefined,
+    jobData: any,
+    error: Error,
+    isFinal: boolean,
+  ) {
+    if (!this.slackWebhookUrl) return;
+
+    const severity = isFinal ? '🚨 *FINAL FAILURE*' : '⚠️ *Job Failed*';
+    const payload = {
+      text: `${severity}: ${jobType}`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `${severity}\n*Queue:* ${jobType}\n*Job ID:* ${jobId || 'Unknown'}\n*Error:* ${error.message}`,
+          },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*Job Data:*\n\`\`\`${JSON.stringify(jobData, null, 2).slice(0, 500)}\`\`\``,
+          },
+        },
+      ],
+    };
+
+    try {
+      const response = await fetch(this.slackWebhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        this.logger.warn(`Slack notification failed: HTTP ${response.status}`);
+      }
+    } catch (err) {
+      this.logger.warn(`Slack notification error: ${(err as Error).message}`);
+    }
+  }
+
   private async sendUserNotification(payoutId: number, error: Error) {
     try {
       const payout = await this.prisma.payout.findUnique({
@@ -129,10 +180,10 @@ export class JobFailureNotifierService implements OnModuleInit {
       });
 
       this.logger.log(`User notification sent for payout ${payoutId}`);
-    } catch (error) {
+    } catch (err) {
       this.logger.error(
         `Failed to send user notification for payout ${payoutId}`,
-        error,
+        err,
       );
     }
   }
