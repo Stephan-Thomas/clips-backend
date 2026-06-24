@@ -122,4 +122,36 @@ export class QueueCollectorService implements OnModuleInit, OnModuleDestroy {
   getRegisteredQueues(): string[] {
     return Array.from(this.registeredQueues.keys());
   }
+
+  /**
+   * Get queue statistics (active, waiting, failed jobs).
+   * If queueName is provided, returns stats for that specific queue.
+   * Otherwise returns stats for all registered queues.
+   */
+  async getQueueStats(queueName?: string): Promise<Record<string, { active: number; waiting: number; failed: number }>> {
+    const stats: Record<string, { active: number; waiting: number; failed: number }> = {};
+
+    const queuesToCheck = queueName
+      ? [[queueName, this.registeredQueues.get(queueName)]]
+      : Array.from(this.registeredQueues.entries());
+
+    for (const [name, queue] of queuesToCheck) {
+      if (!queue) {
+        continue;
+      }
+      try {
+        const counts = await queue.getJobCounts('active', 'waiting', 'failed');
+        stats[name] = {
+          active: counts.active ?? 0,
+          waiting: counts.waiting ?? 0,
+          failed: counts.failed ?? 0
+        };
+      } catch (err) {
+        this.logger.error(`Failed to get stats for queue ${name}: ${err instanceof Error ? err.message : String(err)}`);
+        stats[name] = { active: 0, waiting: 0, failed: 0 };
+      }
+    }
+
+    return stats;
+  }
 }

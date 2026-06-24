@@ -16,6 +16,6 @@ import { QueueCollectorService } from './queue-collector.service';
     MetricsService,
     MetricsInterceptor,
   ],
-  exports: [MetricsService, MetricsInterceptor, QueueMetricsService],
+  exports: [MetricsService, MetricsInterceptor, QueueMetricsService, QueueCollectorService],
 })
 export class MetricsModule {}
