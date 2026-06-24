@@ -21,6 +21,14 @@ export interface BullMQWorkerConfig {
   clipGenerationConcurrency: number;
   /** Email delivery queue concurrency (I/O-bound SMTP operations) */
   emailDeliveryConcurrency: number;
+  /** NFT mint queue concurrency */
+  nftMintConcurrency: number;
+  /** Clip posting queue concurrency (I/O-bound API calls) */
+  clipPostingConcurrency: number;
+  /** Anomaly detection queue concurrency */
+  anomalyDetectionConcurrency: number;
+  /** Payout retry queue concurrency */
+  payoutRetryConcurrency: number;
 }
 
 /**
@@ -67,6 +75,19 @@ export interface BullMQFullConfig {
 export function getBullMQWorkerConfig(
   configService: ConfigService,
 ): BullMQWorkerConfig {
+  const globalConcurrency = configService.get<number>('WORKER_CONCURRENCY');
+  
+  if (globalConcurrency !== undefined && !isNaN(globalConcurrency) && globalConcurrency > 0) {
+    return {
+      clipGenerationConcurrency: globalConcurrency,
+      emailDeliveryConcurrency: globalConcurrency,
+      nftMintConcurrency: globalConcurrency,
+      clipPostingConcurrency: globalConcurrency,
+      anomalyDetectionConcurrency: globalConcurrency,
+      payoutRetryConcurrency: globalConcurrency,
+    };
+  }
+
   return {
     // Clip generation: CPU-intensive, default to 2 concurrent jobs
     clipGenerationConcurrency: parseInt(
@@ -76,6 +97,26 @@ export function getBullMQWorkerConfig(
     // Email delivery: I/O-bound, default to 5 concurrent jobs
     emailDeliveryConcurrency: parseInt(
       configService.get<string>('BULLMQ_EMAIL_DELIVERY_CONCURRENCY', '5'),
+      10,
+    ),
+    // NFT mint: default to 1 concurrent job
+    nftMintConcurrency: parseInt(
+      configService.get<string>('BULLMQ_NFT_MINT_CONCURRENCY', '1'),
+      10,
+    ),
+    // Clip posting: I/O-bound, default to 10 concurrent jobs
+    clipPostingConcurrency: parseInt(
+      configService.get<string>('BULLMQ_CLIP_POSTING_CONCURRENCY', '10'),
+      10,
+    ),
+    // Anomaly detection: default to 1 concurrent job
+    anomalyDetectionConcurrency: parseInt(
+      configService.get<string>('BULLMQ_ANOMALY_DETECTION_CONCURRENCY', '1'),
+      10,
+    ),
+    // Payout retry: default to 1 concurrent job
+    payoutRetryConcurrency: parseInt(
+      configService.get<string>('BULLMQ_PAYOUT_RETRY_CONCURRENCY', '1'),
       10,
     ),
   };
@@ -170,6 +211,34 @@ export function validateWorkerConfig(config: BullMQWorkerConfig): void {
     errors.push(
       'BULLMQ_EMAIL_DELIVERY_CONCURRENCY should not exceed 50 (risk of SMTP rate limits)',
     );
+  }
+
+  if (config.nftMintConcurrency < 1) {
+    errors.push('BULLMQ_NFT_MINT_CONCURRENCY must be at least 1');
+  }
+  if (config.nftMintConcurrency > 200) {
+    errors.push('BULLMQ_NFT_MINT_CONCURRENCY should not exceed 200 (risk of resource exhaustion)');
+  }
+
+  if (config.clipPostingConcurrency < 1) {
+    errors.push('BULLMQ_CLIP_POSTING_CONCURRENCY must be at least 1');
+  }
+  if (config.clipPostingConcurrency > 100) {
+    errors.push('BULLMQ_CLIP_POSTING_CONCURRENCY should not exceed 100 (risk of API rate limits)');
+  }
+
+  if (config.anomalyDetectionConcurrency < 1) {
+    errors.push('BULLMQ_ANOMALY_DETECTION_CONCURRENCY must be at least 1');
+  }
+  if (config.anomalyDetectionConcurrency > 50) {
+    errors.push('BULLMQ_ANOMALY_DETECTION_CONCURRENCY should not exceed 50');
+  }
+
+  if (config.payoutRetryConcurrency < 1) {
+    errors.push('BULLMQ_PAYOUT_RETRY_CONCURRENCY must be at least 1');
+  }
+  if (config.payoutRetryConcurrency > 50) {
+    errors.push('BULLMQ_PAYOUT_RETRY_CONCURRENCY should not exceed 50');
   }
 
   if (errors.length > 0) {

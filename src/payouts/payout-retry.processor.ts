@@ -1,15 +1,19 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 import { PayoutsService } from './payouts.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { PAYOUT_RETRY_QUEUE } from './payout-retry.queue';
+import { getBullMQWorkerConfig } from '../config/bullmq.config';
 
 interface PayoutRetryJob {
   payoutId: number;
 }
 
-@Processor(PAYOUT_RETRY_QUEUE)
+@Processor(PAYOUT_RETRY_QUEUE, {
+  concurrency: getBullMQWorkerConfig(new ConfigService()).payoutRetryConcurrency,
+})
 export class PayoutRetryProcessor extends WorkerHost {
   private readonly logger = new Logger(PayoutRetryProcessor.name);
 

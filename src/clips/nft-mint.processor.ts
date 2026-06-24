@@ -1,10 +1,12 @@
 import { Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { NFT_MINT_QUEUE } from './nft-mint.queue';
 import { NftMintService } from './nft-mint.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { GracefulShutdownService } from '../common/shutdown/graceful-shutdown.service';
+import { getBullMQWorkerConfig } from '../config/bullmq.config';
 
 export interface NftMintJob {
   clipId: number;
@@ -12,7 +14,9 @@ export interface NftMintJob {
   userId: number;
 }
 
-@Processor(NFT_MINT_QUEUE)
+@Processor(NFT_MINT_QUEUE, {
+  concurrency: getBullMQWorkerConfig(new ConfigService()).nftMintConcurrency,
+})
 export class NftMintProcessor extends WorkerHost implements OnModuleInit {
   private readonly logger = new Logger(NftMintProcessor.name);
 
