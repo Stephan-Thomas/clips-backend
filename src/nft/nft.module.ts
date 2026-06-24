@@ -10,6 +10,7 @@ import { BatchRoyaltyService } from './batch-royalty.service';
 import { BatchRoyaltyController } from './batch-royalty.controller';
 import { NftMintService } from '../clips/nft-mint.service';
 import { NftOwnershipService } from './nft-ownership.service';
+import { NftMintGuard } from './guards/nft-mint.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StellarModule } from '../stellar/stellar.module';
 import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.module';
@@ -24,6 +25,7 @@ import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.
     NftOwnershipService,
     PlatformRevenueService,
     BatchRoyaltyService,
+    NftMintGuard,
   ],
   controllers: [
     NftController,

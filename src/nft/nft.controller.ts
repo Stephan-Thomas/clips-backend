@@ -19,6 +19,7 @@ import { CreateMintPreparationDto } from './dto/prepare-mint.dto';
 import { NftMintService } from '../clips/nft-mint.service';
 import { RoyaltyQueryService, RoyaltyInfo } from './royalty-query.service';
 import { LoginGuard } from '../auth/guards/login.guard';
+import { NftMintGuard } from './guards/nft-mint.guard';
 
 @ApiTags('nft')
 @Controller('nfts')
@@ -33,6 +34,7 @@ export class NftController {
    * POST /nfts/mint
    * Mints a clip as an NFT with split royalties (legacy stub endpoint).
    */
+  @UseGuards(NftMintGuard)
   @Post('mint')
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ nftMint: { limit: 5, ttl: 60000 } })
@@ -47,7 +49,7 @@ export class NftController {
    * Builds a Soroban mint transaction and returns the XDR for the frontend to sign.
    * The authenticated user must own the clip being minted.
    */
-  @UseGuards(LoginGuard)
+  @UseGuards(LoginGuard, NftMintGuard)
   @Post('prepare-mint')
   @HttpCode(HttpStatus.CREATED)
   @Throttle({ nftMint: { limit: 5, ttl: 60000 } })
