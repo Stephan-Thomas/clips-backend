@@ -1,6 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { EarningsService } from './earnings.service';
+import { EarningsAggregationService } from './earnings-aggregation.service';
+import { EarningsExportService } from './earnings-export.service';
+import { CurrencyConversionService } from './currency-conversion.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
+import { ConfigService } from '../config/config.service';
 
 describe('EarningsService - getEarningsByPlatform', () => {
   let service: EarningsService;
@@ -10,12 +15,29 @@ describe('EarningsService - getEarningsByPlatform', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EarningsService,
+        EarningsAggregationService,
+        EarningsExportService,
+        CurrencyConversionService,
         {
           provide: PrismaService,
           useValue: {
             earning: {
               findMany: jest.fn(),
             },
+          },
+        },
+        {
+          provide: RedisService,
+          useValue: {
+            get: jest.fn().mockResolvedValue(null),
+            del: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            earningsCacheTtlSeconds: 3600,
+            leaderboardEnabled: false,
           },
         },
       ],

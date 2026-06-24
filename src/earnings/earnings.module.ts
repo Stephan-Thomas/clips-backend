@@ -7,14 +7,20 @@ import { AdminAnomaliesController } from './admin.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AnomalyDetectionService } from './anomaly-detection.service';
 import { AnomalyDetectionProcessor } from './anomaly-detection.processor';
+import { ANOMALY_DETECTION_QUEUE } from './anomaly-detection.queue';
 import { AuthModule } from '../auth/auth.module';
 import { CurrencyConversionService } from './currency-conversion.service';
 import { RedisModule } from '../redis/redis.module';
 import { MonthlySummaryService } from './monthly-summary.service';
-import { QueueModule } from '../queue/queue.module';
+import { registerQueue } from '../common';
 
 @Module({
-  imports: [PrismaModule, QueueModule, AuthModule, RedisModule],
+  imports: [
+    PrismaModule,
+    registerQueue(ANOMALY_DETECTION_QUEUE),
+    AuthModule,
+    RedisModule,
+  ],
   controllers: [EarningsController, AdminAnomaliesController],
   providers: [
     EarningsService,

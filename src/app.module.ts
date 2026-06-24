@@ -26,6 +26,7 @@ import { CircuitBreakerModule } from './common/circuit-breaker/circuit-breaker.m
 import { RedisModule } from './redis/redis.module';
 import { EarningsModule } from './earnings/earnings.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { ConfigModule as AppConfigModule } from './config/config.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { LoggerModule } from './logger/logger.module';
 import { RequestIdMiddleware } from './logger/request-id.middleware';
@@ -120,6 +121,7 @@ import { QueueModule } from './queue/queue.module';
     RedisModule,
     EarningsModule,
     MetricsModule,
+    AppConfigModule,
     WalletsModule,
     UsersModule,
     TransactionsModule,

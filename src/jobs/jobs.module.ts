@@ -2,10 +2,13 @@ import { Module } from '@nestjs/common';
 import { JobsController } from './jobs.controller';
 import { JobsService } from './jobs.service';
 import { QueueCleanupService } from './queue-cleanup.service';
-import { QueueModule } from '../queue/queue.module';
+import { CLIP_GENERATION_QUEUE } from '../clips/clip-generation.queue';
+import { registerQueue } from '../common';
 
 @Module({
-  imports: [QueueModule],
+  imports: [
+    registerQueue(CLIP_GENERATION_QUEUE),
+  ],
   controllers: [JobsController],
   providers: [JobsService, QueueCleanupService],
 })

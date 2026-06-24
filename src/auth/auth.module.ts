@@ -13,12 +13,17 @@ import { DeviceFingerprintService } from './device-fingerprint.service';
 import { BruteForceProtectionService } from './brute-force-protection.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CsrfModule } from '../csrf/csrf.module';
+import { BullModule } from '@nestjs/bullmq';
+import {
+  EMAIL_DELIVERY_QUEUE,
+  EMAIL_DELIVERY_QUEUE_PRIORITY,
+} from './email-delivery.queue';
 import { EmailDeliveryService } from './email-delivery.service';
 import { EmailDeliveryProcessor } from './email-delivery.processor';
 import { EncryptionModule } from '../encryption/encryption.module';
 import { StellarModule } from '../stellar/stellar.module';
 import { AdminGuard } from './guards/admin.guard';
-import { QueueModule } from '../queue/queue.module';
+import { registerQueue } from '../common';
 
 @Module({
   imports: [
@@ -40,7 +45,7 @@ import { QueueModule } from '../queue/queue.module';
       },
     }),
     CsrfModule,
-    QueueModule,
+    registerQueue(EMAIL_DELIVERY_QUEUE),
   ],
   controllers: [AuthController],
   providers: [

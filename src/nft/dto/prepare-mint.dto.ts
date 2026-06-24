@@ -1,22 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { IsInt, IsString, IsNotEmpty, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
+
+/** @deprecated Use CreateMintPreparationDto */
+export type PrepareMintDto = CreateMintPreparationDto;
 
 export class CreateMintPreparationDto {
-  @ApiProperty({
-    description: 'Numeric identifier of the clip to mint',
-    example: 42,
-    minimum: 1,
-  })
-  @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Type(() => Number)
   clipId: number;
 
-  @ApiProperty({
-    description: 'Stellar account that will receive and sign for the NFT',
-    example: 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF',
-  })
   @IsString()
   @IsNotEmpty()
   walletAddress: string;
