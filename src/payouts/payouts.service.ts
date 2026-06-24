@@ -258,6 +258,7 @@ export class PayoutsService {
     id: number;
     status: string;
     transactionId: string;
+    externalTransactionId: string | null;
     onChainTxHash: string | null;
   }> {
     // Performance: Use select to fetch only needed fields for payout processing (optimization #326)
@@ -267,8 +268,10 @@ export class PayoutsService {
         id: true,
         amount: true,
         currency: true,
+        method: true,
         status: true,
         stellarXdr: true,
+        retryCount: true,
         wallet: {
           select: {
             address: true,
@@ -345,6 +348,7 @@ export class PayoutsService {
         data: {
           status: 'completed',
           transactionId: transaction.hash().toString('hex'),
+          externalTransactionId: submitResult.hash,
           onChainTxHash: submitResult.hash,
           confirmedAt: new Date(),
         },
@@ -370,6 +374,7 @@ export class PayoutsService {
         id: payout.id,
         status: 'completed',
         transactionId: transaction.hash().toString('hex'),
+        externalTransactionId: submitResult.hash,
         onChainTxHash: submitResult.hash,
       };
     } catch (error) {
