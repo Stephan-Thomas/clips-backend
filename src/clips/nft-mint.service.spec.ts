@@ -41,6 +41,11 @@ describe('NftMintService uploadMetadataToIPFS', () => {
     verifyNFTOwnership: jest.fn(),
   };
 
+  const royaltyConfigMock = {
+    getCreatorRoyaltyBps: jest.fn().mockReturnValue(1000),
+    buildRoyaltyMap: jest.fn(),
+  };
+
   let service: NftMintService;
 
   beforeEach(() => {
@@ -53,6 +58,7 @@ describe('NftMintService uploadMetadataToIPFS', () => {
       configMock,
       ipfsUploadMock as unknown as IpfsUploadService,
       nftOwnershipMock as any,
+      royaltyConfigMock as any,
     );
   });
 

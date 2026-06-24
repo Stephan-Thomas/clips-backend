@@ -28,6 +28,7 @@ import { QueueRateLimitGuard } from '../common/guards/queue-rate-limit.guard';
 import { UserPlatformModule } from '../user-platform/user-platform.module';
 import { IpfsUploadModule } from '../nft/ipfs-upload.module';
 import { NftOwnershipModule } from '../nft/nft-ownership.module';
+import { RoyaltyConfigurationService } from '../nft/royalty-configuration.service';
 import { MetricsModule } from '../metrics/metrics.module';
 import { ConfigModule } from '../config/config.module';
 
@@ -87,6 +88,7 @@ import { ConfigModule } from '../config/config.module';
     CloudinaryService,
     ClipsGateway,
     NftMintService,
+    RoyaltyConfigurationService,
     AyrshareService,
     ClipPublishService,
     QueueRateLimitGuard,

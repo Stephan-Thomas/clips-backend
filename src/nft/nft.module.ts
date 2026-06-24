@@ -10,6 +10,7 @@ import { PlatformRevenueController } from './platform-revenue.controller';
 import { BatchRoyaltyService } from './batch-royalty.service';
 import { BatchRoyaltyController } from './batch-royalty.controller';
 import { NftMintService } from '../clips/nft-mint.service';
+import { RoyaltyConfigurationService } from './royalty-configuration.service';
 import { NftMintGuard } from './guards/nft-mint.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StellarModule } from '../stellar/stellar.module';
@@ -25,6 +26,7 @@ import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.
     PlatformRevenueService,
     BatchRoyaltyService,
     NftMintGuard,
+    RoyaltyConfigurationService,
   ],
   controllers: [
     NftController,
@@ -39,6 +41,7 @@ import { CircuitBreakerModule } from '../common/circuit-breaker/circuit-breaker.
     BatchRoyaltyService,
     IpfsUploadModule,
     NftOwnershipModule,
+    RoyaltyConfigurationService,
   ],
 })
 export class NftModule {}

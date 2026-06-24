@@ -13,6 +13,7 @@ import { CircuitBreakerService, CircuitBreakerConfig } from '../common/circuit-b
 import { ConfigService } from '../config/config.service';
 import { IpfsUploadService, NftMetadata } from '../nft/ipfs-upload.service';
 import { NftOwnershipService } from '../nft/nft-ownership.service';
+import { RoyaltyConfigurationService } from '../nft/royalty-configuration.service';
 
 interface NftAttribute {
   trait_type: string;
@@ -44,22 +45,11 @@ export class NftMintService {
     private readonly config: ConfigService,
     private readonly ipfsUploadService: IpfsUploadService,
     private readonly nftOwnershipService: NftOwnershipService,
+    private readonly royaltyConfigurationService: RoyaltyConfigurationService,
   ) {}
 
   private get CONTRACT_ID(): string {
     return this.config.sorobanNftContractId || 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEU4';
-  }
-
-  private get PLATFORM_WALLET(): string {
-    return this.config.platformWallet || 'GDV76E6XN6A3Q3WXVZ4KPRQ7L6E6XN6A3Q3WXVZ4KPRQ7L6E6XN6';
-  }
-
-  private get PLATFORM_ROYALTY_BPS(): number {
-    return this.config.platformRoyaltyBps;
-  }
-
-  private get CREATOR_ROYALTY_BPS(): number {
-    return this.config.creatorRoyaltyBps;
   }
 
   async uploadMetadataToIPFS(clipId: number): Promise<UploadMetadataResult> {
@@ -87,7 +77,9 @@ export class NftMintService {
       viralityScore: clip.viralityScore,
       createdAt: clip.createdAt,
       postStatus: clip.postStatus,
-      royaltyBps: this.CREATOR_ROYALTY_BPS,
+      royaltyBps: this.royaltyConfigurationService.getCreatorRoyaltyBps(
+        clip.royaltyBps,
+      ),
     });
 
     const metadataUri = await this.ipfsUploadService.uploadMetadata(
@@ -195,25 +187,10 @@ export class NftMintService {
 
       const contract = new StellarSdk.Contract(this.CONTRACT_ID);
 
-      // Use custom royaltyBps from clip, default to 1000 bps (10%)
-      const creatorRoyaltyBps = clip.royaltyBps ?? this.CREATOR_ROYALTY_BPS;
-
-      if (creatorRoyaltyBps < 0 || creatorRoyaltyBps > 1500) {
-        throw new BadRequestException(
-          `Invalid royaltyBps: ${creatorRoyaltyBps}. Must be between 0 and 1500.`,
-        );
-      }
-
-      const royaltyMapEntries = [
-        {
-          key: StellarSdk.Address.fromString(walletAddress).toScVal(),
-          value: StellarSdk.nativeToScVal(creatorRoyaltyBps, { type: 'u32' }),
-        },
-        {
-          key: StellarSdk.Address.fromString(this.PLATFORM_WALLET).toScVal(),
-          value: StellarSdk.nativeToScVal(this.PLATFORM_ROYALTY_BPS, { type: 'u32' }),
-        },
-      ];
+      const royaltyMapEntries = this.royaltyConfigurationService.buildRoyaltyMap(
+        walletAddress,
+        clip.royaltyBps,
+      );
 
       const op = contract.call(
         'mint',
