@@ -1,15 +1,11 @@
-import {
-  IsString,
-  IsNotEmpty,
-  IsOptional,
-  IsUrl,
-  IsInt,
-  Min,
-  Max,
-} from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUrl } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsValidRoyaltyBps } from '../../common/validators/decorators';
 
-export class MintClipDto {
+/** @deprecated Use CreateMintDto */
+export type MintClipDto = CreateMintDto;
+
+export class CreateMintDto {
   /** ID of the clip being minted */
   @IsString()
   @IsNotEmpty()
@@ -30,9 +26,7 @@ export class MintClipDto {
    * Defaults to 1000 (10%) if not provided.
    */
   @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(10000)
   @Type(() => Number)
+  @IsValidRoyaltyBps()
   royaltyBps?: number;
 }

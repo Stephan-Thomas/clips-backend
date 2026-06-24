@@ -1,9 +1,9 @@
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
-import { MintClipDto } from './mint-clip.dto';
+import { CreateMintDto } from './mint-clip.dto';
 
-function makeValid(overrides: Partial<MintClipDto> = {}): MintClipDto {
-  return plainToInstance(MintClipDto, {
+function makeValid(overrides: Partial<CreateMintDto> = {}): CreateMintDto {
+  return plainToInstance(CreateMintDto, {
     clipId: '42',
     creatorWallet: 'GABC123',
     ...overrides,

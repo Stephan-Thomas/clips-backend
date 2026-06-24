@@ -28,6 +28,7 @@ import { BulkDeleteClipsDto } from './dto/bulk-delete-clips.dto.js';
 import { PublishClipDto } from './dto/publish-clip.dto.js';
 import { ClipPublishService } from './clip-publish.service.js';
 import type { ClipGenerationJob } from './clip-generation.processor';
+import { QueueRateLimitGuard, QueueRateLimit } from '../common/guards/queue-rate-limit.guard';
 
 @ApiTags('clips')
 @ApiBearerAuth('access-token')
@@ -40,6 +41,8 @@ export class ClipsController {
   ) {}
 
   @Post('generate')
+  @UseGuards(QueueRateLimitGuard)
+  @QueueRateLimit({ queue: 'clip-generation', maxJobs: 5 })
   @ApiOperation({
     summary: 'Generate a clip',
     description: 'Enqueue a clip-generation job with automatic retry + exponential backoff. Returns the BullMQ job ID immediately; processing happens asynchronously.',
@@ -47,6 +50,7 @@ export class ClipsController {
   @ApiResponse({ status: 201, description: 'Clip generation job queued successfully' })
   @ApiResponse({ status: 400, description: 'Invalid request data' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 429, description: 'Too many active jobs' })
   generate(@Body() dto: ClipGenerationJob) {
     return this.clipsService.enqueueClip(dto);
   }
@@ -135,6 +139,8 @@ export class ClipsController {
   }
 
   @Post(':id/regenerate')
+  @UseGuards(QueueRateLimitGuard)
+  @QueueRateLimit({ queue: 'clip-generation', maxJobs: 5 })
   @ApiOperation({
     summary: 'Regenerate a clip',
     description: 'Re-run FFmpeg cut for a single clip using original timestamps.',
@@ -143,6 +149,7 @@ export class ClipsController {
   @ApiResponse({ status: 200, description: 'Clip regeneration started' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Clip not found' })
+  @ApiResponse({ status: 429, description: 'Too many active jobs' })
   regenerate(@Param('id') id: string, @Req() req: Request) {
     const userId: number = Number(
       (req as any).user?.id ?? (req.headers['x-user-id'] as string) ?? 0,

@@ -4,22 +4,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { CreateStellarSubscriptionDto } from './dto/create-stellar-subscription.dto';
 import { StellarService } from '../stellar/stellar.service';
+import { CircuitBreakerService } from '../common/circuit-breaker/circuit-breaker.service';
 
 jest.mock('../prisma/prisma.service', () => ({
   PrismaService: class PrismaService {},
 }));
 
-jest.mock('@stellar/stellar-sdk', () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    transactionsTransaction: jest.fn(),
-  })),
-  TransactionBuilder: jest.fn(),
-  Networks: {},
-  Operation: {},
-  Asset: {},
-  Horizon: { Server: jest.fn() },
-}));
+jest.mock('@stellar/stellar-sdk', () => require('../../test/mocks/stellar-sdk.mock'));
 
 describe('StellarPaymentService', () => {
   let service: StellarPaymentService;
@@ -56,6 +47,7 @@ describe('StellarPaymentService', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: StellarService, useValue: mockStellarService },
+        CircuitBreakerService,
       ],
     }).compile();
 
@@ -64,6 +56,7 @@ describe('StellarPaymentService', () => {
 
   describe('createPaymentIntent', () => {
     it('validates destination address and creates intent', async () => {
+      const userId = 1;
       const dto: CreateStellarSubscriptionDto = {
         plan: 'pro',
         asset: 'xlm',
@@ -89,7 +82,7 @@ describe('StellarPaymentService', () => {
       const result = await service.createPaymentIntent(userId, dto);
 
       expect(result).toEqual({
-        id: 'test-intent-id',
+        id: 'intent-id',
         amount: 10,
         asset: 'xlm',
         destination: mockWallet.address,
@@ -138,13 +131,14 @@ describe('StellarPaymentService', () => {
 
       expect(ok).toBe(true);
       expect(mockPrismaService.subscription.create).toHaveBeenCalled();
-      expect(mockPrismaService.stellarPaymentIntent.updateMany).toHaveBeenCalledWith({
+      expect(mockPrismaService.subscription.updateMany).toHaveBeenCalledWith({
         where: {
-          status: 'pending',
-          expiresAt: { lt: expect.any(Date) },
+          userId: 1,
+          status: 'active',
         },
         data: {
-          status: 'expired',
+          status: 'cancelled',
+          endDate: expect.any(Date),
         },
       });
     });

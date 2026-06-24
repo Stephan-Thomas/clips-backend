@@ -4,11 +4,13 @@ import {
   IsOptional,
   IsString,
   ArrayNotEmpty,
-  IsInt,
-  Min,
-  Max,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsValidRoyaltyBps,
+  CLIP_ROYALTY_BPS_MAX,
+} from '../../common/validators/decorators';
 
 export class BulkUpdateClipsDto {
   @ApiProperty({
@@ -51,8 +53,7 @@ export class BulkUpdateClipsDto {
     maximum: 1500,
   })
   @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(10000)
+  @Type(() => Number)
+  @IsValidRoyaltyBps({ max: CLIP_ROYALTY_BPS_MAX })
   royaltyBps?: number;
 }

@@ -127,4 +127,32 @@ export class StellarService {
       };
     }
   }
+
+  async fundWithFriendbot(address: string): Promise<void> {
+    if (!this.isTestnet()) {
+      this.logger.warn(`Not funding address ${address}: not on testnet.`);
+      return;
+    }
+
+    try {
+      this.logger.log(`Requesting Friendbot funding for address ${address}...`);
+      const response = await fetch(
+        `https://friendbot.stellar.org/?addr=${encodeURIComponent(address)}`,
+      );
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(
+          `Friendbot funding failed (${response.status}): ${body.slice(0, 300)}`,
+        );
+      }
+
+      this.logger.log(`Successfully funded ${address} using Friendbot.`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to fund address ${address} with Friendbot: ${error.message}`,
+      );
+      throw error;
+    }
+  }
 }

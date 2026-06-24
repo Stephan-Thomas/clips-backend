@@ -1,5 +1,7 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { NftMintService } from './nft-mint.service';
+import { IpfsUploadService } from '../nft/ipfs-upload.service';
+import { ConfigService } from '../config/config.service';
 
 // Mock the entire Stellar SDK so non-configurable class properties can be replaced
 jest.mock('@stellar/stellar-sdk', () => {
@@ -46,41 +48,41 @@ const baseClip = {
   mintAddress: null,
 };
 
-const VALID_WALLET = 'GC6XOTK6L6LGBKIWH3IRUZPVUY4COGEMW4J5YINOSPKO27YKTUUHTZF3';
+  const configMock = {
+    creatorRoyaltyBps: 1000,
+    platformRoyaltyBps: 100,
+    platformWallet: 'GDV76E6XN6A3Q3WXVZ4KPRQ7L6E6XN6A3Q3WXVZ4KPRQ7L6E6XN6',
+    sorobanNftContractId: '',
+  } as ConfigService;
 
-const prismaMock = {
-  clip: { findUnique: jest.fn(), update: jest.fn() },
-};
+  const ipfsUploadMock = {
+    uploadMetadata: jest.fn(),
+  };
 
-const stellarMock = {
-  networkPassphrase: 'Test SDF Network ; September 2015',
-  rpcUrl: 'https://soroban-testnet.stellar.org',
-  network: 'testnet',
-  validateAddress: jest.fn().mockReturnValue({ valid: true }),
-};
+  const nftOwnershipMock = {
+    verifyNFTOwnership: jest.fn(),
+  };
 
-const metricsMock = { incrementNftMints: jest.fn() };
+  const royaltyConfigMock = {
+    getCreatorRoyaltyBps: jest.fn().mockReturnValue(1000),
+    buildRoyaltyMap: jest.fn(),
+  };
 
-const circuitBreakerMock = {
-  execute: jest.fn().mockImplementation((_config, fn) => fn()),
-};
-
-function makeService() {
-  return new NftMintService(
-    prismaMock as any,
-    stellarMock as any,
-    metricsMock as any,
-    circuitBreakerMock as any,
-  );
-}
-
-beforeEach(() => jest.clearAllMocks());
-
-// ─── uploadMetadataToIPFS ────────────────────────────────────────────────────
-
-describe('NftMintService.uploadMetadataToIPFS', () => {
   let service: NftMintService;
-  beforeEach(() => { service = makeService(); });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new NftMintService(
+      prismaMock as any,
+      stellarMock as any,
+      metricsMock as any,
+      circuitBreakerMock as any,
+      configMock,
+      ipfsUploadMock as unknown as IpfsUploadService,
+      nftOwnershipMock as any,
+      royaltyConfigMock as any,
+    );
+  });
 
   it('throws NotFoundException when clip does not exist', async () => {
     prismaMock.clip.findUnique.mockResolvedValue(null);
@@ -93,15 +95,26 @@ describe('NftMintService.uploadMetadataToIPFS', () => {
   });
 
   it('uploads metadata, persists metadataUri, and returns cid', async () => {
-    prismaMock.clip.findUnique.mockResolvedValue({ ...baseClip });
-    const uploadSpy = jest
-      .spyOn(service as any, 'uploadMetadataToIpfs')
-      .mockResolvedValue('ipfs://bafyTestCid123');
+    prismaMock.clip.findUnique.mockResolvedValue({
+      id: 5,
+      title: 'Amazing Clip',
+      caption: 'A test clip',
+      clipUrl: 'https://cdn.example.com/video.mp4',
+      thumbnail: 'https://cdn.example.com/thumb.jpg',
+      duration: 27,
+      viralityScore: 88,
+      createdAt: new Date('2026-03-01T00:00:00.000Z'),
+      postStatus: { tiktok: true },
+    });
+
+    ipfsUploadMock.uploadMetadata.mockResolvedValue('ipfs://bafyTestCid123');
     prismaMock.clip.update.mockResolvedValue({});
 
     const result = await service.uploadMetadataToIPFS(5);
 
-    const [metadata, clipId] = uploadSpy.mock.calls[0];
+    expect(ipfsUploadMock.uploadMetadata).toHaveBeenCalledTimes(1);
+    const [metadata, clipId] = ipfsUploadMock.uploadMetadata.mock.calls[0];
+
     expect(clipId).toBe(5);
     expect(metadata as any).toMatchObject({
       name: 'Amazing Clip',

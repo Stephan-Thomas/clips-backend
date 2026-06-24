@@ -5,6 +5,8 @@ import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import * as crypto from 'crypto';
 
+jest.mock('@stellar/stellar-sdk', () => require('../../test/mocks/stellar-sdk.mock'));
+
 describe('StellarWebhookService', () => {
   let service: StellarWebhookService;
   let prismaService: PrismaService;
@@ -25,19 +27,19 @@ describe('StellarWebhookService', () => {
     },
   };
 
+  const configValues: Record<string, string> = {
+    STELLAR_HORIZON_URL: 'https://horizon-testnet.stellar.org',
+    WEBHOOK_SECRET: 'test_webhook_secret_32_chars_long!!',
+    STELLAR_WALLET_ADDRESS: 'GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H',
+  };
+
   const mockConfigService = {
-    get: jest.fn((key: string) => {
-      const config: Record<string, string> = {
-        'STELLAR_HORIZON_URL': 'https://horizon-testnet.stellar.org',
-        'WEBHOOK_SECRET': 'test_webhook_secret_32_chars_long!!',
-        'STELLAR_WALLET_ADDRESS': 'GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H',
-      };
-      return config[key];
-    }),
+    get: jest.fn((key: string) => configValues[key]),
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockConfigService.get.mockImplementation((key: string) => configValues[key]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -81,8 +83,10 @@ describe('StellarWebhookService', () => {
     });
 
     it('should throw UnauthorizedException when WEBHOOK_SECRET is not configured', () => {
-      // Override config to return undefined for WEBHOOK_SECRET
-      jest.spyOn(configService, 'get').mockReturnValue(undefined);
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'WEBHOOK_SECRET') return undefined;
+        return configValues[key];
+      });
 
       const payload = JSON.stringify({ test: 'data' });
       const signature = 'any_signature';

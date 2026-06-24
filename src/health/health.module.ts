@@ -1,14 +1,16 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
-import { HealthController } from './health.controller';
+import { ScheduleModule } from '@nestjs/schedule';
 import { RedisModule } from '../redis/redis.module';
-import { CLIP_GENERATION_QUEUE } from '../clips/clip-generation.queue';
+import { RedisMemoryService } from './redis-memory.service';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
     RedisModule,
-    BullModule.registerQueue({ name: CLIP_GENERATION_QUEUE }),
+    ScheduleModule.forRoot(),
   ],
   controllers: [HealthController],
+  providers: [RedisMemoryService],
+  exports: [RedisMemoryService],
 })
 export class HealthModule {}

@@ -19,23 +19,7 @@ jest.mock('./virality-score.util', () => ({
 }));
 
 import { cutClip } from './ffmpeg.util';
-
-// Mock CloudinaryService
-class MockCloudinaryService {
-  async readFileToBuffer() {
-    return Buffer.from('mock-video-data');
-  }
-  async uploadVideoFromBuffer() {
-    return {
-      secure_url: 'https://cloudinary.com/video.mp4',
-      thumbnail_url: 'https://cloudinary.com/thumb.jpg',
-      public_id: 'test-clip',
-    };
-  }
-  async deleteLocalFile() {
-    return;
-  }
-}
+import { MockCloudinaryService } from '../../test/mocks/cloudinary.mock';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -65,7 +49,12 @@ function makeJob(
 function makeProcessor() {
   const emitter = new EventEmitter2();
   const cloudinaryService = new MockCloudinaryService();
-  const clipsGateway = { emitProgressToUser: jest.fn() };
+  const clipsGateway = {
+    emitProgressToUser: jest.fn(),
+    emitProgress: jest.fn(),
+    emitCompleted: jest.fn(),
+    emitFailed: jest.fn(),
+  };
   const clipsService = {
     _registerJobController: jest.fn(),
     _clearJobController: jest.fn(),
@@ -76,6 +65,14 @@ function makeProcessor() {
   };
   const metricsService = {
     incrementClipsGenerated: jest.fn(),
+    recordJobStart: jest.fn(),
+    recordJobCompletion: jest.fn(),
+    recordJobFailure: jest.fn(),
+  };
+  const prisma = {
+    video: {
+      findUnique: jest.fn().mockResolvedValue({ userId: 1 }),
+    },
   };
   jest.spyOn(emitter, 'emit');
   jest.spyOn(cloudinaryService, 'uploadVideoFromBuffer');
@@ -86,8 +83,9 @@ function makeProcessor() {
     clipsGateway as any,
     clipsService as any,
     metricsService as any,
+    prisma as any,
   );
-  return { processor, emitter, cloudinaryService, clipsService };
+  return { processor, emitter, cloudinaryService, clipsService, prisma };
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -222,10 +220,10 @@ describe('ClipGenerationProcessor', () => {
   });
 
   describe('CLIP_JOB_OPTIONS', () => {
-    it('configures 3 attempts with exponential backoff at 1000ms', () => {
-      expect(CLIP_JOB_OPTIONS.attempts).toBe(3);
+    it('configures 5 attempts with exponential backoff at 2000ms', () => {
+      expect(CLIP_JOB_OPTIONS.attempts).toBe(5);
       expect(CLIP_JOB_OPTIONS.backoff.type).toBe('exponential');
-      expect(CLIP_JOB_OPTIONS.backoff.delay).toBe(1000);
+      expect(CLIP_JOB_OPTIONS.backoff.delay).toBe(2000);
     });
   });
 });

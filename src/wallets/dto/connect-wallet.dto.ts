@@ -1,7 +1,10 @@
 import { IsString, IsNotEmpty, IsIn } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class ConnectWalletDto {
+/** @deprecated Use CreateWalletConnectionDto */
+export type ConnectWalletDto = CreateWalletConnectionDto;
+
+export class CreateWalletConnectionDto {
   @ApiProperty({ description: 'The wallet address (e.g., Stellar G address)' })
   @IsString()
   @IsNotEmpty()
