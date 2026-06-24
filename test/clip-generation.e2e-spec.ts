@@ -54,6 +54,7 @@ import {
   mockFFmpegOOM,
   cleanupFFmpegMockAfterTest,
 } from './helpers/ffmpeg-mock.helper';
+import { MockCloudinaryService } from './mocks/cloudinary.mock';
 
 // ── In-memory fakes ───────────────────────────────────────────────────────────
 
@@ -109,19 +110,6 @@ class FakePrisma {
   $disconnect = jest.fn();
 }
 
-class FakeCloudinaryService {
-  async uploadVideoFromBuffer(_buf: Buffer, publicId: string) {
-    return {
-      secure_url: `https://res.cloudinary.com/demo/video/upload/${publicId}.mp4`,
-      thumbnail_url: `https://res.cloudinary.com/demo/video/upload/${publicId}.jpg`,
-      public_id: publicId,
-    };
-  }
-  async deleteLocalFile() { return; }
-  async readFileToBuffer() { return Buffer.from('mock-video'); }
-  async deleteClip() { return; }
-}
-
 // ── Test suite ────────────────────────────────────────────────────────────────
 
 describe('Clip Generation E2E', () => {
@@ -130,12 +118,12 @@ describe('Clip Generation E2E', () => {
   let queue: FakeQueue;
   let clipsService: ClipsService;
   let processor: ClipGenerationProcessor;
-  let cloudinaryService: FakeCloudinaryService;
+  let cloudinaryService: MockCloudinaryService;
 
   beforeAll(async () => {
     prisma = new FakePrisma();
     queue = new FakeQueue();
-    cloudinaryService = new FakeCloudinaryService();
+    cloudinaryService = new MockCloudinaryService();
 
     const metricsService = {
       incrementClipsGenerated: jest.fn(),
