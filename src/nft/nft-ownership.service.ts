@@ -1,73 +1,91 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StellarService } from '../stellar/stellar.service';
-import * as StellarSdk from '@stellar/stellar-sdk';
+import { ConfigService } from '../config/config.service';
+import {
+  CircuitBreakerConfig,
+  CircuitBreakerService,
+} from '../common/circuit-breaker/circuit-breaker.service';
+import {
+  createDefaultOwnershipStrategy,
+  NFT_OWNERSHIP_STRATEGY,
+} from './strategies/nft-ownership-verification.factory';
+import type {
+  NftOwnershipVerificationStrategy,
+  OwnershipVerificationResult,
+} from './strategies/nft-ownership-verification.strategy';
 
 @Injectable()
 export class NftOwnershipService {
   private readonly logger = new Logger(NftOwnershipService.name);
+  private readonly strategy: NftOwnershipVerificationStrategy;
 
-  constructor(private readonly stellarService: StellarService) {}
+  private readonly circuitBreakerConfig: CircuitBreakerConfig = {
+    name: 'soroban-nft-ownership',
+    failureThreshold: 5,
+    recoveryTimeout: 30000,
+    samplingDuration: 60000,
+  };
+
+  constructor(
+    private readonly stellarService: StellarService,
+    private readonly config: ConfigService,
+    private readonly circuitBreakerService: CircuitBreakerService,
+    strategy?: NftOwnershipVerificationStrategy,
+  ) {
+    this.strategy =
+      strategy ??
+      createDefaultOwnershipStrategy({
+        rpcUrl: this.stellarService.rpcUrl,
+        networkPassphrase: this.stellarService.networkPassphrase,
+      });
+  }
+
+  private get contractId(): string {
+    return (
+      this.config.sorobanNftContractId ||
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEU4'
+    );
+  }
 
   /**
-   * Verifies if a wallet address owns at least 1 unit of a specific NFT contract.
-   * @param mintAddress The Contract ID of the NFT.
-   * @param walletAddress The public key of the user.
+   * Verify on-chain NFT ownership for a token ID and wallet address.
+   * Uses the configured ownership verification strategy (Soroban owner_of).
    */
   async verifyNFTOwnership(
-    mintAddress: string,
+    tokenId: string,
     walletAddress: string,
-  ): Promise<{ isOwner: boolean; error?: string }> {
-    const { rpc, Contract, nativeToScVal, scValToNative, TransactionBuilder, Account } = StellarSdk;
-    const server = new rpc.Server(this.stellarService.rpcUrl);
-
-    // Placeholder account for building the simulation transaction
-    const sourceAccount = new Account('GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF', '0');
+    contractId?: string,
+  ): Promise<OwnershipVerificationResult> {
+    this.logger.log(
+      `Verifying ownership: tokenId=${tokenId}, wallet=${walletAddress}`,
+    );
 
     try {
-      const contract = new Contract(mintAddress);
-      
-      // Build the call for 'balance_of(Address)'
-      const tx = new TransactionBuilder(sourceAccount, {
-        fee: '100',
-        networkPassphrase: this.stellarService.networkPassphrase,
-      })
-        .addOperation(
-          contract.call('balance_of', nativeToScVal(walletAddress, { type: 'address' }))
-        )
-        .setTimeout(30)
-        .build();
-
-      // Simulate the call (No signature required)
-      const sim = await server.simulateTransaction(tx);
-
-      const simulation = sim as {
-        error?: string;
-        results?: Array<{ xdr?: string }>;
-      };
-
-      if (simulation.error) {
-        return { isOwner: false, error: `Contract error: ${simulation.error}` };
+      return await this.circuitBreakerService.execute(
+        this.circuitBreakerConfig,
+        () =>
+          this.strategy.verifyOwnership(
+            contractId ?? this.contractId,
+            tokenId,
+            walletAddress,
+          ),
+      );
+    } catch (error) {
+      if (error?.name === 'ServiceUnavailableException') {
+        this.logger.error('Soroban service unavailable during ownership verification');
+        return {
+          isOwner: false,
+          error:
+            'Soroban service temporarily unavailable. Please try again later.',
+        };
       }
 
-      if (!simulation.results || simulation.results.length === 0) {
-        return { isOwner: false, error: 'No response from contract' };
-      }
-
-      const result = simulation.results[0];
-      if (!result.xdr) {
-        return { isOwner: false, error: 'Missing result XDR' };
-      }
-
-      const returnValue = StellarSdk.xdr.ScVal.fromXDR(result.xdr, 'base64');
-      const balance = scValToNative(returnValue);
-      
-      return {
-        isOwner: Number(balance) > 0,
-      };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Ownership check failed: ${message}`);
-      return { isOwner: false, error: 'Failed to reach Soroban network' };
+      const message =
+        error instanceof Error ? error.message : 'Ownership verification failed';
+      this.logger.error(`Ownership verification failed: ${message}`);
+      return { isOwner: false, error: message };
     }
   }
 }
+
+export { NFT_OWNERSHIP_STRATEGY };
