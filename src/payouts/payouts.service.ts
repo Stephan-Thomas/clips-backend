@@ -14,6 +14,14 @@ import { StellarService } from '../stellar/stellar.service';
 import { PayoutReceiptService } from './payout-receipt.service';
 import { FeeService } from './fee.service';
 import { PAYOUT_RETRY_QUEUE, MAX_PAYOUT_RETRIES, PAYOUT_RETRY_BACKOFF_BASE } from './payout-retry.queue';
+import { PayoutApprovalService } from './payout-approval.service';
+
+const OPEN_PAYOUT_STATUSES = [
+  'pending',
+  'pending_approval',
+  'approved',
+  'processing',
+] as const;
 
 @Injectable()
 export class PayoutsService {
@@ -27,6 +35,7 @@ export class PayoutsService {
     private stellarService: StellarService,
     private payoutReceiptService: PayoutReceiptService,
     private feeService: FeeService,
+    private payoutApprovalService: PayoutApprovalService,
     @InjectQueue(PAYOUT_RETRY_QUEUE) private payoutRetryQueue: Queue,
   ) {
     this.minPayoutAmount = parseFloat(process.env.MIN_STELLAR_PAYOUT ?? '5');
@@ -43,7 +52,7 @@ export class PayoutsService {
     finalAmount?: number;
   }> {
     const existingPending = await this.prisma.payout.findFirst({
-      where: { userId, status: 'pending' },
+      where: { userId, status: { in: [...OPEN_PAYOUT_STATUSES] } },
     });
 
     if (existingPending) {
@@ -79,6 +88,7 @@ export class PayoutsService {
         (totalEarnings._sum.amount ?? 0) - (totalPaidOut._sum.amount ?? 0);
 
       const fee = await this.feeService.calculateFee(availableBalance, 'stellar');
+      const status = this.payoutApprovalService.resolveInitialStatus(availableBalance);
 
       return tx.payout.create({
         data: {
@@ -87,7 +97,7 @@ export class PayoutsService {
           amount: availableBalance,
           currency,
           method: 'stellar',
-          status: 'pending',
+          status,
           feeAmount: fee.feeAmount,
           feePercentage: fee.feePercentage,
           finalAmount: fee.finalAmount,
@@ -121,7 +131,7 @@ export class PayoutsService {
     finalAmount?: number;
   }> {
     const existingPending = await this.prisma.payout.findFirst({
-      where: { userId, status: 'pending' },
+      where: { userId, status: { in: [...OPEN_PAYOUT_STATUSES] } },
     });
 
     if (existingPending) {
@@ -184,6 +194,7 @@ export class PayoutsService {
     }
 
     const feeCalculation = await this.feeService.calculateFee(amount, method);
+    const status = this.payoutApprovalService.resolveInitialStatus(amount);
 
     const payout = await this.prisma.payout.create({
       data: {
@@ -193,7 +204,7 @@ export class PayoutsService {
         amount,
         currency,
         method,
-        status: 'pending',
+        status,
         feeAmount: feeCalculation.feeAmount,
         feePercentage: feeCalculation.feePercentage,
         finalAmount: feeCalculation.finalAmount,
@@ -290,6 +301,12 @@ export class PayoutsService {
     if (payout.status === 'completed') {
       throw new BadRequestException(
         `Payout is already in ${payout.status} status`,
+      );
+    }
+
+    if (payout.status !== 'approved') {
+      throw new BadRequestException(
+        `Payout must be approved before processing (current status: ${payout.status})`,
       );
     }
 
@@ -419,7 +436,7 @@ export class PayoutsService {
   async approvePayout(payoutId: number): Promise<{ id: number; status: string; approvedAt: Date }> {
     const payout = await this.prisma.payout.findUnique({ where: { id: payoutId } });
     if (!payout) throw new NotFoundException('Payout not found');
-    if (payout.status !== 'pending') {
+    if (!['pending', 'pending_approval'].includes(payout.status)) {
       throw new BadRequestException(`Cannot approve payout in '${payout.status}' status`);
     }
 
@@ -438,7 +455,7 @@ export class PayoutsService {
   ): Promise<{ id: number; status: string; rejectedAt: Date; rejectionReason: string | null }> {
     const payout = await this.prisma.payout.findUnique({ where: { id: payoutId } });
     if (!payout) throw new NotFoundException('Payout not found');
-    if (!['pending', 'approved'].includes(payout.status)) {
+    if (!['pending', 'pending_approval', 'approved'].includes(payout.status)) {
       throw new BadRequestException(`Cannot reject payout in '${payout.status}' status`);
     }
 
@@ -458,7 +475,7 @@ export class PayoutsService {
 
   async listPendingPayouts(): Promise<Array<{ id: number; userId: number; amount: number; currency: string; status: string; createdAt: Date }>> {
     return this.prisma.payout.findMany({
-      where: { status: { in: ['pending', 'approved'] } },
+      where: { status: { in: ['pending_approval', 'approved'] } },
       orderBy: { createdAt: 'asc' },
       select: { id: true, userId: true, amount: true, currency: true, status: true, createdAt: true },
     });
@@ -485,9 +502,9 @@ export class PayoutsService {
             throw new NotFoundException('Payout record not found');
           }
 
-          if (payout.status !== 'pending') {
+          if (payout.status !== 'approved') {
             throw new BadRequestException(
-              `Payout is already in ${payout.status} status`,
+              `Payout must be approved before processing (current status: ${payout.status})`,
             );
           }
 
