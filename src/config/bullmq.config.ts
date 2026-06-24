@@ -23,6 +23,45 @@ export interface BullMQWorkerConfig {
   emailDeliveryConcurrency: number;
 }
 
+export interface BullMQConnectionConfig {
+  /** Redis host for BullMQ connection */
+  redisHost: string;
+  /** Redis port for BullMQ connection */
+  redisPort: number;
+}
+
+/**
+ * Load BullMQ Redis connection config from environment variables.
+ */
+export function getBullMQConnectionConfig(
+  configService: ConfigService,
+): BullMQConnectionConfig {
+  return {
+    redisHost: configService.get<string>('REDIS_HOST', 'localhost'),
+    redisPort: parseInt(configService.get<string>('REDIS_PORT', '6379'), 10),
+  };
+}
+
+/**
+ * Validate Redis connection configuration.
+ * Ensures REDIS_HOST is a non-empty string and REDIS_PORT is a valid port number.
+ */
+export function validateConnectionConfig(config: BullMQConnectionConfig): void {
+  const errors: string[] = [];
+
+  if (!config.redisHost || config.redisHost.trim() === '') {
+    errors.push('REDIS_HOST must be a non-empty string');
+  }
+
+  if (isNaN(config.redisPort) || config.redisPort < 1 || config.redisPort > 65535) {
+    errors.push('REDIS_PORT must be a valid port number between 1 and 65535');
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Invalid BullMQ connection configuration:\n${errors.join('\n')}`);
+  }
+}
+
 /**
  * Load BullMQ worker configuration from environment variables
  * with sensible defaults for each queue type.
