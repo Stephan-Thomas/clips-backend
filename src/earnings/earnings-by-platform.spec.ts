@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { EarningsService } from './earnings.service';
 import { EarningsAggregationService } from './earnings-aggregation.service';
 import { EarningsExportService } from './earnings-export.service';
+import { TaxReportExportService } from './tax-report-export.service';
 import { CurrencyConversionService } from './currency-conversion.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RedisService } from '../redis/redis.service';
@@ -17,6 +18,7 @@ describe('EarningsService - getEarningsByPlatform', () => {
         EarningsService,
         EarningsAggregationService,
         EarningsExportService,
+        TaxReportExportService,
         CurrencyConversionService,
         {
           provide: PrismaService,
