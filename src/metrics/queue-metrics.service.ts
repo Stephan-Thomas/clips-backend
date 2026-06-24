@@ -14,6 +14,7 @@ import {
  *   - Job processing time (duration histogram)
  *   - Job failure rate
  *   - Job completion time by queue
+ *   - Worker memory usage (rss, heap total, heap used)
  */
 @Injectable()
 export class QueueMetricsService implements OnModuleInit, OnModuleDestroy {
