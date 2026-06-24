@@ -52,6 +52,10 @@ export class EarningsService {
     return this.exportService.exportEarningsCsv(userId, options);
   }
 
+  async exportTaxReportCsv(userId: number, year: number) {
+    return this.taxReportExportService.exportTaxReportCsv(userId, year);
+  }
+
   async softDelete(earningId: number, userId: number) {
     return this.aggregationService.softDelete(earningId, userId);
   }
