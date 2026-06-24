@@ -23,6 +23,7 @@ import { EmailDeliveryProcessor } from './email-delivery.processor';
 import { EncryptionModule } from '../encryption/encryption.module';
 import { StellarModule } from '../stellar/stellar.module';
 import { AdminGuard } from './guards/admin.guard';
+import { registerQueue } from '../common';
 
 @Module({
   imports: [
@@ -44,10 +45,7 @@ import { AdminGuard } from './guards/admin.guard';
       },
     }),
     CsrfModule,
-    BullModule.registerQueue({
-      name: EMAIL_DELIVERY_QUEUE,
-      defaultJobOptions: { priority: EMAIL_DELIVERY_QUEUE_PRIORITY },
-    }),
+    registerQueue(EMAIL_DELIVERY_QUEUE),
   ],
   controllers: [AuthController],
   providers: [
