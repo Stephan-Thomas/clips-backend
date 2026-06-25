@@ -22,6 +22,9 @@ export class WalletManagementService {
   async disconnect(walletId: number, userId: number): Promise<DisconnectResult> {
     const wallet = await this.prisma.wallet.findUnique({
       where: { id: walletId },
+      include: {
+        payouts: true,
+      },
     });
 
     if (!wallet || wallet.userId !== userId) {
@@ -32,13 +35,35 @@ export class WalletManagementService {
       throw new ConflictException('Wallet is already disconnected');
     }
 
-    const pendingPayout = await this.prisma.payout.findFirst({
-      where: { walletId, status: 'pending' },
-    });
+    const pendingPayout = (wallet.payouts ?? []).find(
+      (payout) => payout.status === 'pending',
+    );
 
     if (pendingPayout) {
       throw new ConflictException(
         'Cannot disconnect wallet: there are pending payouts attached to it',
+      );
+    }
+
+    const activeNft = await this.prisma.clip.findFirst({
+      where: {
+        video: {
+          userId,
+        },
+        OR: [
+          { nftStatus: 'minting' },
+          { nftStatus: 'minted' },
+          { mintAddress: { not: null } },
+        ],
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (activeNft) {
+      throw new ConflictException(
+        'Cannot disconnect wallet: active NFTs are still associated with this account',
       );
     }
 
