@@ -145,8 +145,11 @@ export class NftMintService {
       );
     }
 
-    // Fetch clip
-    const clip = await this.prisma.clip.findUnique({ where: { id: clipId } });
+    // Fetch clip with clipPosts
+    const clip = await this.prisma.clip.findUnique({ 
+      where: { id: clipId },
+      include: { clipPosts: { select: { status: true } } },
+    });
 
     if (!clip) {
       throw new NotFoundException(`Clip with ID ${clipId} not found`);
@@ -157,6 +160,14 @@ export class NftMintService {
       throw new BadRequestException(
         'Clip is already being minted or has been minted',
       );
+    }
+
+    // Prevent minting of posted clips
+    const isPosted = clip.postStatus === 'posted' || 
+      clip.clipPosts.some(post => post.status === 'published');
+    
+    if (isPosted) {
+      throw new BadRequestException('Posted clips cannot be minted.');
     }
 
     if (!clip.clipUrl) {

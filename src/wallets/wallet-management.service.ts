@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ConnectWalletDto } from './dto/connect-wallet.dto';
 import { WalletValidationService } from './wallet-validation.service';
+import { maskAddress } from './wallet.utils';
 
 export interface DisconnectResult {
   message: string;
@@ -18,6 +19,18 @@ export class WalletManagementService {
     private readonly prisma: PrismaService,
     private readonly walletValidationService: WalletValidationService,
   ) {}
+
+  /**
+   * Masks sensitive wallet information before returning to client
+   * @param wallet Wallet object from database
+   * @returns Wallet with masked address
+   */
+  private maskWallet(wallet: any): any {
+    return {
+      ...wallet,
+      address: maskAddress(wallet.address),
+    };
+  }
 
   async disconnect(walletId: number, userId: number): Promise<DisconnectResult> {
     const wallet = await this.prisma.wallet.findUnique({
@@ -56,7 +69,7 @@ export class WalletManagementService {
   async connect(userId: number, dto: ConnectWalletDto) {
     this.walletValidationService.validateStellarAddress(dto.address);
 
-    return this.prisma.wallet.upsert({
+    const wallet = await this.prisma.wallet.upsert({
       where: {
         address_chain: {
           address: dto.address,
@@ -76,5 +89,7 @@ export class WalletManagementService {
         type: dto.type,
       },
     });
+
+    return this.maskWallet(wallet);
   }
 }
