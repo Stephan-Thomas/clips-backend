@@ -596,4 +596,32 @@ export class PayoutsService {
 
     return { processed, failed, results };
   }
+
+  async cancelPayout(userId: number, payoutId: number): Promise<{ id: number; status: string }> {
+    const payout = await this.prisma.payout.findFirst({
+      where: { id: payoutId, userId },
+    });
+
+    if (!payout) {
+      throw new NotFoundException('Payout record not found');
+    }
+
+    if (!['pending', 'pending_approval'].includes(payout.status)) {
+      throw new BadRequestException(
+        `Cannot cancel payout in '${payout.status}' status. Only pending payouts can be canceled.`
+      );
+    }
+
+    const updated = await this.prisma.payout.update({
+      where: { id: payoutId },
+      data: { status: 'canceled' },
+    });
+
+    this.logger.log(`Payout ${payoutId} canceled by user ${userId}`);
+
+    return {
+      id: updated.id,
+      status: updated.status,
+    };
+  }
 }

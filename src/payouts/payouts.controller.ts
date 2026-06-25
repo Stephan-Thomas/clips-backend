@@ -72,4 +72,17 @@ export class PayoutsController {
   async processPayout(@Param('id') id: string) {
     return this.payoutsService.processPayout(parseInt(id, 10));
   }
+
+  @Post(':id/cancel')
+  @ApiOperation({ summary: 'Cancel a pending payout request' })
+  @ApiParam({ name: 'id', description: 'Payout ID' })
+  @ApiResponse({ status: 200, description: 'Payout canceled successfully' })
+  @ApiResponse({ status: 400, description: 'Payout cannot be canceled' })
+  @ApiResponse({ status: 404, description: 'Payout not found' })
+  async cancelPayout(
+    @Req() req: RequestWithUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.payoutsService.cancelPayout(req.user.userId, id);
+  }
 }

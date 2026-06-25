@@ -34,6 +34,7 @@ model User {
   refreshTokens          RefreshToken[]
   passwordResetTokens    PasswordResetToken[]
   emailVerificationTokens EmailVerificationToken[]
+  earningsAuditLogs       EarningsAuditLog[]
 
   @@unique([provider, providerId])
 }
@@ -357,4 +358,16 @@ model MonthlyEarning {
   @@unique([userId, year, month])
   @@index([userId])
   @@index([year, month])
+}
+
+model EarningsAuditLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  amount     Float
+  actionType String
+  timestamp  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([timestamp])
 }
