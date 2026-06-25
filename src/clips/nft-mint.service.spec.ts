@@ -32,6 +32,43 @@ jest.mock('@stellar/stellar-sdk', () => {
 
 import StellarSdk from '@stellar/stellar-sdk';
 
+const VALID_WALLET = 'GDV76E6XN6A3Q3WXVZ4KPRQ7L6E6XN6A3Q3WXVZ4KPRQ7L6E6XN6';
+
+const prismaMock = {
+  clip: {
+    findUnique: jest.fn(),
+    update: jest.fn(),
+  },
+};
+
+const stellarMock = {
+  validateAddress: jest.fn().mockReturnValue({ valid: true }),
+  networkPassphrase: 'Test SDF Network ; September 2015',
+  rpcUrl: 'https://soroban-testnet.stellar.org',
+  network: 'testnet',
+};
+
+const metricsMock = {
+  incrementNftMints: jest.fn(),
+};
+
+const circuitBreakerMock = {
+  execute: jest.fn().mockImplementation((_config: unknown, fn: () => unknown) => fn()),
+};
+
+function makeService(): NftMintService {
+  return new NftMintService(
+    prismaMock as any,
+    stellarMock as any,
+    metricsMock as any,
+    circuitBreakerMock as any,
+    configMock,
+    ipfsUploadMock as unknown as IpfsUploadService,
+    nftOwnershipMock as any,
+    royaltyConfigMock as any,
+  );
+}
+
 const baseClip = {
   id: 5,
   title: 'Amazing Clip',
@@ -46,42 +83,35 @@ const baseClip = {
   metadataUri: null,
   royaltyBps: null,
   mintAddress: null,
+  clipPosts: [],
 };
 
-  const configMock = {
-    creatorRoyaltyBps: 1000,
-    platformRoyaltyBps: 100,
-    platformWallet: 'GDV76E6XN6A3Q3WXVZ4KPRQ7L6E6XN6A3Q3WXVZ4KPRQ7L6E6XN6',
-    sorobanNftContractId: '',
-  } as ConfigService;
+const configMock = {
+  creatorRoyaltyBps: 1000,
+  platformRoyaltyBps: 100,
+  platformWallet: 'GDV76E6XN6A3Q3WXVZ4KPRQ7L6E6XN6A3Q3WXVZ4KPRQ7L6E6XN6',
+  sorobanNftContractId: '',
+} as ConfigService;
 
-  const ipfsUploadMock = {
-    uploadMetadata: jest.fn(),
-  };
+const ipfsUploadMock = {
+  uploadMetadata: jest.fn(),
+};
 
-  const nftOwnershipMock = {
-    verifyNFTOwnership: jest.fn(),
-  };
+const nftOwnershipMock = {
+  verifyNFTOwnership: jest.fn(),
+};
 
-  const royaltyConfigMock = {
-    getCreatorRoyaltyBps: jest.fn().mockReturnValue(1000),
-    buildRoyaltyMap: jest.fn(),
-  };
+const royaltyConfigMock = {
+  getCreatorRoyaltyBps: jest.fn().mockReturnValue(1000),
+  buildRoyaltyMap: jest.fn(),
+};
 
+describe('NftMintService.uploadMetadataToIPFS', () => {
   let service: NftMintService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new NftMintService(
-      prismaMock as any,
-      stellarMock as any,
-      metricsMock as any,
-      circuitBreakerMock as any,
-      configMock,
-      ipfsUploadMock as unknown as IpfsUploadService,
-      nftOwnershipMock as any,
-      royaltyConfigMock as any,
-    );
+    service = makeService();
   });
 
   it('throws NotFoundException when clip does not exist', async () => {
@@ -251,43 +281,35 @@ describe('NftMintService.verifyNFTOwnership', () => {
     }));
   });
 
-  it('returns owned:false with error when circuit breaker throws', async () => {
-    circuitBreakerMock.execute.mockRejectedValue(new Error('Network error'));
+  it('returns owned:false with error when ownership verification returns error', async () => {
+    nftOwnershipMock.verifyNFTOwnership.mockResolvedValue({ isOwner: false, error: 'Network error' });
     const result = await service.verifyNFTOwnership('5', VALID_WALLET);
     expect(result.owned).toBe(false);
-    expect(result.error).toBeDefined();
+    expect(result.error).toBe('Network error');
   });
 
-  it('returns owned:false when simulation returns an error field', async () => {
-    circuitBreakerMock.execute.mockResolvedValue({ error: 'contract error' });
+  it('returns owned:false when ownership returns error', async () => {
+    nftOwnershipMock.verifyNFTOwnership.mockResolvedValue({ isOwner: false, error: 'Simulation failed' });
     const result = await service.verifyNFTOwnership('5', VALID_WALLET);
     expect(result.owned).toBe(false);
     expect(result.error).toContain('Simulation failed');
   });
 
-  it('returns owned:false when simulation returns no results', async () => {
-    circuitBreakerMock.execute.mockResolvedValue({ results: [] });
+  it('returns owned:false when ownership returns not owner', async () => {
+    nftOwnershipMock.verifyNFTOwnership.mockResolvedValue({ isOwner: false });
     const result = await service.verifyNFTOwnership('5', VALID_WALLET);
     expect(result.owned).toBe(false);
   });
 
-  it('returns owned:true when contract returns matching wallet address', async () => {
-    circuitBreakerMock.execute.mockResolvedValue({
-      results: [{ xdr: 'fakeXdr' }],
-    });
-    (StellarSdk.scValToNative as jest.Mock).mockReturnValue(VALID_WALLET);
-
+  it('returns owned:true when ownership verification succeeds', async () => {
+    nftOwnershipMock.verifyNFTOwnership.mockResolvedValue({ isOwner: true });
     const result = await service.verifyNFTOwnership('5', VALID_WALLET);
     expect(result.owned).toBe(true);
     expect(result.error).toBeUndefined();
   });
 
-  it('returns owned:false when contract returns different wallet address', async () => {
-    circuitBreakerMock.execute.mockResolvedValue({
-      results: [{ xdr: 'fakeXdr' }],
-    });
-    (StellarSdk.scValToNative as jest.Mock).mockReturnValue('GDIFFERENTADDRESS');
-
+  it('returns owned:false when ownership returns different owner', async () => {
+    nftOwnershipMock.verifyNFTOwnership.mockResolvedValue({ isOwner: false });
     const result = await service.verifyNFTOwnership('5', VALID_WALLET);
     expect(result.owned).toBe(false);
   });
